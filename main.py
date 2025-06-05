@@ -1,6 +1,10 @@
+# main.py
 import discord
 from discord.ext import commands
 from discord.ui import Button, View
+
+# import commands from coup_views.py
+from coup_views import create_join_game_button, create_leave_game_button
 
 # Set up intents
 intents = discord.Intents.default()
@@ -50,37 +54,34 @@ async def show_players(ctx):
 
 # Create Coup Lobby Message
 async def print_players(ctx):
-    # add join game button
-    coup_join_button = Button(label="Join Game", style=discord.ButtonStyle.blue)
+    # declare global variables
+    global prev_msg
 
-    # add button interaction functionality
-    # on click if player is not in the game, add them then redisplay players.
-    async def button_callback(interaction: discord.Interaction):
-        user = interaction.user
-        if user.id not in players:
-            players[user.id] = user.name
-            await show_players(ctx)
+    # create a view
+    message = View()
+    # add buttons to the view
+    message.add_item(create_join_game_button(players, ctx, print_players))
+    message.add_item(create_leave_game_button(players, ctx, print_players))
 
-    couop_join_button.callback = button_callback
-
-    join_button = View()
-    join_button.add_item(button)
-
+    # convert dict into string
     players_string = "\n".join(players.values())
+    # add embed with title, description to view
     embed = discord.Embed(
         title = "Game of Coup!",
         description = "2-6 Player Game",
     )
+    # add player names to embed
     embed.add_field(name="Players", value=players_string, inline=False)
-    prev_msg = await ctx.send(embed=embed, view=join_button)
 
-    # remove the previous lobby message if it exists
-    global prev_msg
-
+    # delete the previous lobby message
     if prev_msg != None:
         await prev_msg.delete()
-    # previous message is now this message
-    prev_msg = players_message
+
+    # output new message. It is now the previously sent message
+    prev_msg = await ctx.send(embed=embed, view=message)
+
+
+
 
 
        
