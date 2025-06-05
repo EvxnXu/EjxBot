@@ -8,7 +8,7 @@ def create_lobby_view(players: dict, print_players, status, ctx):
 
     view.add_item(join_bt(players, print_players, ctx))
     view.add_item(leave_bt(players, print_players, ctx))
-    view.add_item(start_bt(players, status))
+    view.add_item(start_bt(players, status, ctx))
 
     return view
 
@@ -50,11 +50,13 @@ def leave_bt(players: dict, print_players, ctx):
     button.callback = callback
     return button
 
-def start_bt(players: dict, status: bool):
+def start_bt(players: dict, status: bool, ctx):
     button = Button(label="Start Game", style=discord.ButtonStyle.green)
 
     async def callback(interaction: discord.Interaction):
         user = interaction.user
+        if len(players) < 2:
+            await ctx.send("At least 2 players required to start the game.")
         if user.id in players:
             status = True
 
