@@ -1,8 +1,13 @@
 # main.py
 import asyncio
 import discord
+import os
 from discord.ext import commands
 from coup import setup as setup_coup
+from dotenv import load_dotenv
+
+# load environment variables from .env file
+load_dotenv()
 
 # Set up intents
 intents = discord.Intents.default()
@@ -20,7 +25,6 @@ async def main():
     # Load Coup cog
 
     await setup_coup(bot)
-
-    await bot.start('MTMyODg4NTcyMjgxOTcyNzQ3Mg.G_1cyc.Ddxy1AjI2v1_OxYTGb7FJ7FSq_3jUc-hmVF7jM')
+    await bot.start(os.getenv("DISCORD_BOT_TOKEN"))
 
 asyncio.run(main())

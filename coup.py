@@ -47,6 +47,8 @@ class Coup(commands.Cog):
 
         # output new message. It is now the previously sent message
         self.prev_msg = await ctx.send(embed=embed, view=view)
+    
+    # 
        
 
 async def setup(bot):

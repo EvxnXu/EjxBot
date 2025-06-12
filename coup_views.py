@@ -34,6 +34,10 @@ def join_bt(players: dict, print_players, ctx):
         if user.id not in players and len(players) < 6:
             players[user.id] = user.name
             await print_players(ctx)
+        elif len(players) >= 6:
+            await interaction.response.send_message("The game is already full.", ephemeral=True)
+        else:
+            await interaction.response.send_message("You are already in this game", ephemeral=True)
     
     button.callback = callback
     return button
@@ -56,7 +60,7 @@ def start_bt(players: dict, status: bool, ctx):
     async def callback(interaction: discord.Interaction):
         user = interaction.user
         if len(players) < 2:
-            await ctx.send("At least 2 players required to start the game.")
+            await interaction.response.send_message("At least 2 players required to start the game.", ephemeral=True)
         if user.id in players:
             status = True
 
