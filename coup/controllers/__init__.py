@@ -1,3 +1,3 @@
-from coup_controller import Coup
+from .coup import Coup, setup
 
-__all__ = ["Coup"]
+__all__ = ["Coup", "setup"]

@@ -3,7 +3,7 @@ import asyncio
 import discord
 import os
 from discord.ext import commands
-from coup import setup as setup_coup
+from coup.controllers import setup as setup_coup
 from dotenv import load_dotenv
 
 # load environment variables from .env file

@@ -1,8 +1,8 @@
 # coup.py
 import discord
 from discord.ext import commands
-from views import create_lobby_view, create_lobby_embed
-from models.lobby_manager import LobbyManager
+from ..views import create_lobby_view, create_lobby_embed
+from ..models.lobby_manager import LobbyManager
 
 class Coup(commands.Cog):
     """
@@ -45,8 +45,9 @@ class Coup(commands.Cog):
                 pass 
 
         # Send new message and save reference as previous message
-        msg = await ctx.send(embed=embed, view=view)
-        self.lobby_msgs[lobby.lobby_id] = msg
+        self.lobby_msgs[lobby.lobby_id] = await ctx.send(embed=embed, view=view)
+    
+    # Game Commands
     
     async def end_game(self, ctx):
         """Ends the current game of coup"""
@@ -60,24 +61,6 @@ class Coup(commands.Cog):
         self.prev_msg = None
 
         await ctx.send("Game ended. Use '!coup' to start a new game.")
-
-    async def print_players(self, ctx):
-        """
-        Create and display the lobby message with current players and buttons.
-        Deletes the previous lobby message if it exists
-        """
-        view = create_lobby_view(self.players, self, ctx)
-        embed = create_lobby_embed(self.players)
-
-        # delete the previous lobby message
-        if self.prev_msg is not None:
-            try:
-                await self.prev_msg.delete()
-            except:
-                pass 
-
-        # Send new message and save reference as previous message
-        self.prev_msg = await ctx.send(embed=embed, view=view)
     
     async def start_game(self, ctx):
         """

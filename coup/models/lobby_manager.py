@@ -1,4 +1,4 @@
-from lobby import Lobby
+from .lobby import Lobby
 
 class LobbyManager:
     """Manages multiple game lobbies."""
@@ -17,4 +17,4 @@ class LobbyManager:
     
     def delete_lobby(self, lobby_id: int):
         if lobby_id in self.lobbies:
-            def self.lobbies[lobby_id]
+            del self.lobbies[lobby_id]
