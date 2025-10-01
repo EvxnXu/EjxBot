@@ -1,10 +1,8 @@
 # coup.py
 import discord
 from discord.ext import commands
-from discord.ui import View
-
-# import views from coup_views.py
-from coup_views import create_lobby_view, create_lobby_embed
+from views import create_lobby_view, create_lobby_embed
+from models.lobby_manager import LobbyManager
 
 class Coup(commands.Cog):
     """
@@ -14,37 +12,41 @@ class Coup(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.coup_status = False # True (Game in progress), False (No game)
-        self.players = {} # user_id: user_name
-        self.prev_msg = None # Track the lobby message to update/delete
-        self.game = None # Placeholder for game state object
+        self.lobby_mananger = LobbyManager()
+        self.lobby_msgs = {} # lobby_id -> last lobby mesasge
+    
+    # Lobby Commands
 
     @commands.command(name="coup", help="Start a game of Coup")
     async def coup(self, ctx):
-        """Starts a game of coup if not already running"""
-
-        # Check if a game is running
-        if self.coup_status:
-            await ctx.send(f'There is already a game of Coup in progress.')
-            return
+        """Starts a new lobby with a unique lobby ID"""
         
-        # Start a new game
-        self.coup_status = True
-        self.players[ctx.author.id] = ctx.author.name
-        await self.print_players(ctx)
+        # Start a new game lobby
+        lobby = self.lobby_manager.create_lobby()
+        lobby.add_player(ctx.author)
+        await self.update_lobby_message(lobby, ctx)
 
-    @commands.command(name="players", help="Print current players of Coup")
-    async def show_players(self, ctx):
-        """Display the current players in the lobby"""
-        try:
-            await ctx.message.delete()
-        except:
-            pass # Ignore if cannot delete
+    # Lobby Message Handling
 
-        if not self.players:
-            await ctx.send("No players have joined the game yet.")
-        else:
-            await self.print_players(ctx)
+    async def update_lobby_message(self, lobby, ctx):
+        """
+        Create and display the lobby message with current players and buttons.
+        Deletes the previous lobby message if it exists
+        """
+        view = create_lobby_view(self, lobby, ctx)
+        embed = create_lobby_embed(lobby.players)
+
+        # delete the previous lobby message
+        prev_msg = self.lobby_msgs.get(lobby.lobby_id)
+        if prev_msg:
+            try:
+                await prev_msg.delete()
+            except:
+                pass 
+
+        # Send new message and save reference as previous message
+        msg = await ctx.send(embed=embed, view=view)
+        self.lobby_msgs[lobby.lobby_id] = msg
     
     async def end_game(self, ctx):
         """Ends the current game of coup"""

@@ -2,7 +2,7 @@
 from discord.ui import Button, View
 import discord
 
-def create_lobby_view(coup_cog, ctx):
+def create_lobby_view(coup_cog, lobby, ctx):
     """
     Create the lobby view with buttons for join/leave/start game buttons.
     
@@ -11,9 +11,9 @@ def create_lobby_view(coup_cog, ctx):
         ctx: Discord context to pass to functions
     """
     view = View(timeout=None)  # Add timeout=None to prevent expiration
-    view.add_item(join_bt(coup_cog, ctx))
-    view.add_item(leave_bt(coup_cog, ctx))
-    view.add_item(start_bt(coup_cog, ctx))
+    view.add_item(join_bt(coup_cog, lobby, ctx))
+    view.add_item(leave_bt(coup_cog, lobby, ctx))
+    view.add_item(start_bt(lobby, ctx))
 
     return view
 
@@ -47,7 +47,11 @@ def create_lobby_embed(players: dict):
 
     return embed
 
-def join_bt(coup_cog, ctx):
+# -------------------- 
+# Buttons
+# --------------------
+
+def join_bt(coup_cog, lobby, ctx):
     """Create the Join Game button"""
     button = Button(label="Join Game", style=discord.ButtonStyle.primary)
 
@@ -55,7 +59,7 @@ def join_bt(coup_cog, ctx):
         user = interaction.user
 
         # Check if game is full
-        if len(coup_cog.players) >= 6:
+        if lobby.is_full():
             await interaction.response.send_message(
                 "The game is already full (6/6 players).", 
                 ephemeral=True
@@ -63,7 +67,7 @@ def join_bt(coup_cog, ctx):
             return
         
         # Check if already in game
-        if user.id in coup_cog.players:
+        if user.id in lobby.players:
             await interaction.response.send_message(
                 "You are already in this game!", 
                 ephemeral=True
@@ -73,58 +77,70 @@ def join_bt(coup_cog, ctx):
         # Add player
         coup_cog.players[user.id] = user.name
         await interaction.response.defer()  # Acknowledge the interaction
-        await coup_cog.print_players(ctx)
+        await coup_cog.update_lobby_message(ctx, lobby)
 
     button.callback = callback
     return button
 
-def leave_bt(coup_cog, ctx):
+def leave_bt(coup_cog, lobby, ctx):
     """Create the Leave Game button"""
     button = Button(label="Leave Game", style=discord.ButtonStyle.red)
 
     async def callback(interaction: discord.Interaction):
         user = interaction.user
 
-        if user.id not in coup_cog.players:
+        if user.id not in lobby.players:
             await interaction.response.send_message(
                 "You are not in this game.", 
                 ephemeral=True
                 )
             return
+
+        if lobby.game:
+            await interaction.response.send_message(
+                "You cannot leave a game in progress.", 
+                ephemeral=True
+                )
+            return
             
         # Remove player
-        del coup_cog.players[user.id]
+        lobby.remove_player(user)
         await interaction.response.defer()  # Acknowledge the interaction
-        await coup_cog.print_players(ctx)
+        await coup_cog.update_lobby_message(ctx, lobby)
 
     button.callback = callback
     return button
 
-def start_bt(coup_cog, ctx):
+def start_bt(lobby, ctx):
     """Create the Start Game button"""
     button = Button(label="Start Game", style=discord.ButtonStyle.green)
 
     async def callback(interaction: discord.Interaction):
         user = interaction.user
-       # Check minimum players
-        if len(coup_cog.players) < 2:
+
+        if lobby.game:
             await interaction.response.send_message(
-                "At least 2 players are required to start the game.", 
+                "The game has already started.", 
                 ephemeral=True
             )
             return
         
-        # Check if user is in the game
-        if user.id not in coup_cog.players:
+        if not lobby.can_start():
             await interaction.response.send_message(
-                "Only players in the game can start it!", 
+                "Not enough players to start the game. Minimum 2 players required.", 
                 ephemeral=True
             )
             return
-            
-        # Start the game
-        await interaction.response.defer()  # Acknowledge the interaction
-        await coup_cog.start_game(ctx)
+        
+        if user.id not in lobby.players:
+            await interaction.response.send_message(
+                "Only players in the lobby can start the game.", 
+                ephemeral=True
+            )
+            return
+        lobby.start_game()
+        await interaction.response.defer()
+        await ctx.send(f"Game started in lobby {lobby.lobby_id} with players: {', '.join(lobby.players.values())}")
     
     button.callback = callback
     return button
