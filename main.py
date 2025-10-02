@@ -3,7 +3,7 @@ import asyncio
 import discord
 import os
 from discord.ext import commands
-from coup import setup as setup_coup
+from coup.controllers import setup as setup_coup
 from dotenv import load_dotenv
 
 # load environment variables from .env file
@@ -23,7 +23,7 @@ async def on_ready():
 
 async def main():
     # Load Coup cog
-
+    
     await setup_coup(bot)
     await bot.start(os.getenv("DISCORD_BOT_TOKEN"))
 
