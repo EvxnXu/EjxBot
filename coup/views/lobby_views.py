@@ -135,8 +135,6 @@ def start_bt(lobby, ctx):
             return
 
         lobby.create_game()
-        await interaction.response.defer()
-        await ctx.send(f"Game started in lobby {lobby.lobby_id} with players: {', '.join(lobby.players.values())}")
     
     button.callback = callback
     return button

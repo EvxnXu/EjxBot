@@ -23,8 +23,11 @@ class Lobby:
         while not self.game:
             await asyncio.sleep(0.1)
         
+        # Put in update message without buttons
+        await self.update_message(ctx) # TODO: Change to message saying that lobby has started with lobby id and players
+        
         # Wait for Game to finish, resturn result to Coup.py
-        result = await self.game.game_loop()
+        result = await self.game.game_loop(self.prev_msg)
         return result
 
     async def update_message(self, ctx: commands.Context):
@@ -32,10 +35,13 @@ class Lobby:
         Create and display the lobby message with current players and buttons.
         Deletes the previous lobby message if it exists
         """
-        view = create_lobby_view(self, ctx)
-        embed = create_lobby_embed(self.players)
+        if not self.game: # Join/Leave/Start Buttons only necessary if game hasn't started yet
+            view = create_lobby_view(self, ctx)
+        else:
+            view = None
+        embed = create_lobby_embed(self.players) #TODO: Add lobby id to lobby embed
 
-        # delete the previous lobby message
+        # delete the previous lobby message if it exists
         if self.prev_msg:
             try:
                 await self.prev_msg.delete()
