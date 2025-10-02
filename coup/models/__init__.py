@@ -1,4 +1,5 @@
 from .lobby import Lobby
-from .lobby_manager import LobbyManager
+from .deck import Deck
+from .game import Game
 
-__all__ = ["Lobby", "LobbyManager"]
+__all__ = ["Lobby", "LobbyManager", "Deck", "Game"]

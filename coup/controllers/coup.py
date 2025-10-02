@@ -1,78 +1,49 @@
 # coup.py
 import discord
 from discord.ext import commands
-from coup.views import create_lobby_view, create_lobby_embed
-from coup.models.lobby_manager import LobbyManager
+from coup.models import Lobby
 
 class Coup(commands.Cog):
     """
     Discord Cog for playing the Coup card game.
-    Manages game lobbies, player management and game state
+    Manages game lobbies and Database
     """
 
     def __init__(self, bot):
         print("Coup cog initialized.")
         self.bot = bot
-        self.lobby_manager = LobbyManager()
-        self.lobby_msgs = {} # lobby_id -> last lobby mesasge
+        self.lobbies = {} # Lobby ID -> Lobby Instance
+        self.next_id = 1
     
+    # --------------
     # Lobby Commands
+    # --------------
 
     @commands.command(name="coup", help="Start a game of Coup")
-    async def coup(self, ctx):
+    async def coup(self, ctx: commands.Context):
         """Starts a new lobby with a unique lobby ID"""
         # Start a new game lobby
-        lobby = self.lobby_manager.create_lobby()
-        lobby.add_player(ctx.author)
-        await self.update_lobby_message(lobby, ctx)
 
-    # Lobby Message Handling
+        # Create lobby
+        lobby = Lobby(self.next_id, ctx)
+        self.lobbies[self.next_id] = lobby
 
-    async def update_lobby_message(self, lobby, ctx):
-        """
-        Create and display the lobby message with current players and buttons.
-        Deletes the previous lobby message if it exists
-        """
-        view = create_lobby_view(self, lobby, ctx)
-        embed = create_lobby_embed(lobby.players)
+        # Debug Statement
+        print(f"Lobby {lobby.lobby_id} created.")
 
-        # delete the previous lobby message
-        prev_msg = self.lobby_msgs.get(lobby.lobby_id)
-        if prev_msg:
-            try:
-                await prev_msg.delete()
-            except:
-                pass 
+        # Update next lobby id
+        self.next_id += 1
 
-        # Send new message and save reference as previous message
-        self.lobby_msgs[lobby.lobby_id] = await ctx.send(embed=embed, view=view)
+        results = await lobby.run(ctx)
+
+        # TODO: DB does something with results
+
+        return
+
     
-    # Game Commands
-    
-    async def end_game(self, ctx):
-        """Ends the current game of coup"""
-        if not self.coup_status:
-            await ctx.send("No game is currently running")
-            return
-        
-        self.coup_status = False
-        self.players.clear()
-        self.game = None
-        self.prev_msg = None
-
-        await ctx.send("Game ended. Use '!coup' to start a new game.")
-    
-    async def start_game(self, ctx):
-        """
-        Starts the actual game of Coup
-        """
-
-        # TODO: Implement game start logic
-        # 1. Create CoupGame instance with players
-        # 2. Initilize deck in random order and deal cards
-        # 3. Set initial coins for each player
-        # 4. Send game start message and player hands to each player
-        # 5. Start turn loop
+    # -----------------
+    # Database Commands
+    # -----------------
        
 
 async def setup(bot):
