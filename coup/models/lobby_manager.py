@@ -10,6 +10,7 @@ class LobbyManager:
         lobby = Lobby(self.next_lobby_id)
         self.lobbies[self.next_lobby_id] = lobby
         self.next_lobby_id += 1
+        print(f"Lobby {lobby.lobby_id} created.")
         return lobby
     
     def get_lobby(self, lobby_id: int):

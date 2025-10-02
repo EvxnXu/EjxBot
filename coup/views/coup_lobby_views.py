@@ -73,11 +73,10 @@ def join_bt(coup_cog, lobby, ctx):
                 ephemeral=True
             )
             return
-        
         # Add player
-        coup_cog.players[user.id] = user.name
+        lobby.add_player(user)
         await interaction.response.defer()  # Acknowledge the interaction
-        await coup_cog.update_lobby_message(ctx, lobby)
+        await coup_cog.update_lobby_message(lobby, ctx)
 
     button.callback = callback
     return button
@@ -102,11 +101,11 @@ def leave_bt(coup_cog, lobby, ctx):
                 ephemeral=True
                 )
             return
-            
+        
         # Remove player
         lobby.remove_player(user)
         await interaction.response.defer()  # Acknowledge the interaction
-        await coup_cog.update_lobby_message(ctx, lobby)
+        await coup_cog.update_lobby_message(lobby, ctx)
 
     button.callback = callback
     return button

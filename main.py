@@ -23,7 +23,7 @@ async def on_ready():
 
 async def main():
     # Load Coup cog
-
+    
     await setup_coup(bot)
     await bot.start(os.getenv("DISCORD_BOT_TOKEN"))
 

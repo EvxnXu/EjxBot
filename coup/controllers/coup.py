@@ -1,8 +1,8 @@
 # coup.py
 import discord
 from discord.ext import commands
-from ..views import create_lobby_view, create_lobby_embed
-from ..models.lobby_manager import LobbyManager
+from coup.views import create_lobby_view, create_lobby_embed
+from coup.models.lobby_manager import LobbyManager
 
 class Coup(commands.Cog):
     """
@@ -11,8 +11,9 @@ class Coup(commands.Cog):
     """
 
     def __init__(self, bot):
+        print("Coup cog initialized.")
         self.bot = bot
-        self.lobby_mananger = LobbyManager()
+        self.lobby_manager = LobbyManager()
         self.lobby_msgs = {} # lobby_id -> last lobby mesasge
     
     # Lobby Commands
@@ -20,7 +21,6 @@ class Coup(commands.Cog):
     @commands.command(name="coup", help="Start a game of Coup")
     async def coup(self, ctx):
         """Starts a new lobby with a unique lobby ID"""
-        
         # Start a new game lobby
         lobby = self.lobby_manager.create_lobby()
         lobby.add_player(ctx.author)
