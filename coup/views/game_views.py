@@ -20,6 +20,7 @@ def create_action_view(game):
     select.callback = callback
     view = View(timeout=None)
     view.add_item(select)
+    print("action buttons created!")
     return view
 
 def create_target_view(game, force_coup=False):
@@ -143,14 +144,5 @@ def create_action_embed(game):
         title="Coup Game",
         description=f"It is {current_player.user_name}'s turn."
     )
-    embed.add_field(
-        name="Players",
-        value="\n".join([f"{p.user_name} ({len(p.influence)} influence)" for p in game.players]),
-        inline=False
-    )
-    embed.add_field(
-        name="Current Action",
-        value=game.action_state.action or "None",
-        inline=False
-    )
+    print("action embed created!")
     return embed

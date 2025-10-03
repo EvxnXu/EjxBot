@@ -45,12 +45,10 @@ class Game:
 
         while self.game_active:
             # Send current
-            await self.take_turn()
-            
+            print("game loop start!")
+            await self.take_turn() #TODO: fix here
+            print("first turn complete?")
             # wait until turn is complete
-            await self.turn_completed.wait()
-            self.turn_completed.clear()
-
             self.advance_turn()
             
 
@@ -82,6 +80,7 @@ class Game:
         if self.current_player.coins >= 10:
             await self.create_target_message(force_coup=True)
         else:
+            print("Create Action Message being called")
             await self.create_action_message()
 
     async def send_update_msg(self, content: str):
@@ -107,6 +106,7 @@ class Game:
         """Send dropdown for player action selection."""
         from coup.views.game_views import create_action_view, create_action_embed
 
+        print("action message create function reached!")
         view = create_action_view(self)
         embed = create_action_embed(self)
         await self.send_interact_msg(
