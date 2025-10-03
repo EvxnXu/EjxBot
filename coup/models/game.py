@@ -3,75 +3,61 @@ import random
 import discord
 from .player import Player
 from .deck import Deck
-from coup.views import create_action_view, create_action_embed
+from .action import Action
 
 
 class Game:
-    """Model representing the state of an ongoing game.
-
-    Args:
-        players: dict mapping user_id -> user_name (same shape as Lobby.players)
-    """
+    """Model representing the state of an ongoing game."""
     def __init__(self, players: dict):
-        
-        # ---------------------------------
-        # Create necessary member variables
-        # ---------------------------------
-
         # Create Player objects from the input mapping
-        # players is expected to be a dict: {user_id: user_name}
         self.players = [Player(user_id, user_name) for user_id, user_name in players.items()]
-        self.game_thread = None # Thread for all messages relating to game
-        self.deck = Deck() # Deck of cards
-        self.dead_players = [] # List of Dead Players for Reference
-        self.game_active = True # State variable for run function
-        self.prev_msg = None # Variable to Track Previous Message to avoid message clutter
+        self.game_thread: discord.Thread | None = None
+        self.deck = Deck()
+        self.dead_players: list[Player] = []
+        self.game_active = True
+        self.prev_msg: discord.Message | None = None
+        self.action_state = Action()
 
-        # ---------------
-        # Game Init Logic
-        # ---------------
 
         # Deal 2 cards to each player
         for player in self.players:
             player.gain_influence(self.deck.draw())
             player.gain_influence(self.deck.draw())
 
-        # Randomize turn order using random.sample and store in a deque for efficient rotation
+        # Randomize turn order
         if self.players:
             randomized = random.sample(self.players, k=len(self.players))
             self.turn_order = deque(randomized)
-            self.current_player = self.turn_order[0]
+            self.current_player = self.turn_order.popleft()
         else:
             raise ValueError("Game has no players.")
 
-    async def game_loop(self, msg):
-        # Create Game Thread
+    async def game_loop(self, msg: discord.Message):
+        """Main game loop."""
+        # Create game thread
         try:
-            self.game_thread = await msg.create_thread(
-                name=f"Game Thread"
-            )
-            print("Game Thread Created")
+            self.game_thread = await msg.create_thread(name="Game Thread")
         except Exception as e:
             print(f"Failed to create thread: {e}")
 
-        # Inform players the game has started
+        # Notify players
         await self.ping_players()
-        
-        """Game loop"""
+
         while self.game_active:
-            self.take_turn()
+            # Send current
+            await self.take_turn()
+            
+            # wait until turn is complete
+            await self.turn_completed.wait()
+            self.turn_completed.clear()
+
             self.advance_turn()
-        return False #TODO: return game result data
+            
 
     async def ping_players(self):
-        mentions = []
-
-        for player in self.players:
-            mentions.append(f"<@{player.user_id}>")
-
-        mention_text = " ".join(mentions) + " The Game has begun!"
-
-        await self.game_thread.send(mention_text)
+        """Ping all players at start of game."""
+        mentions = " ".join([f"<@{p.user_id}>" for p in self.players])
+        await self.game_thread.send(mentions + " The game has begun!")
 
     def advance_turn(self):
         """
@@ -87,34 +73,59 @@ class Game:
         self.current_player = self.turn_order.popleft()
 
     def get_turn_order_ids(self):
-        """Return the current turn order as a list of player ids."""
+        """Return list of player IDs in turn order."""
         return [p.user_id for p in self.turn_order]
-    
-    def take_turn(self):
-        """Current player takes their turn."""
-        # current player chooses their action from roleActions + globalActions
-            # Create View for action selection
-        view = create_action_view()
-        # if action requires target, choose target from players in turn order (alive players excl. self)
-            # Option 1: IF action is a roleAction, players can challenge
-                # 1a. If challenge occurs, resolve challenge
-                # 1b. If no challenge, action can be blocked by target if applicable, resolve block
-            # Option 2: globalAction
-                # 2a. if action can be blocked, resolve block logic
-            # Losing influence, exchanging cards, etc. logic handled in respective methods
-        # return
-    
-    def create_action_message(self):
-        """Function that creates a action message with buttons for each action"""
-        view, embed = create_action_view(), create_action_embed()
-        actor = self.current_player
 
-    def block_action(self, action, actor):
-        """Handles giving other players the option to block an action."""
+    async def take_turn(self):
+        """Handle current player's turn."""
+        # Must coup if coins >= 10
+        if self.current_player.coins >= 10:
+            await self.create_target_message(force_coup=True)
+        else:
+            await self.create_action_message()
 
-    
-    def challenge_action(self, action, actor):
-        """Handles giving other players the option to challenge an action."""
+    async def send_update_msg(self, content: str):
+        """Delete previous interactable message and send a log message in thread."""
+        if self.prev_msg:
+            try:
+                await self.prev_msg.delete()
+            except:
+                pass
+        self.prev_msg = None
+        await self.game_thread.send(content)
+
+    async def send_interact_msg(self, content: str, view: discord.ui.View, embed: discord.Embed):
+        """Send a message with an interactive view."""
+        if self.prev_msg:
+            try:
+                await self.prev_msg.delete()
+            except:
+                pass
+        self.prev_msg = await self.game_thread.send(content=content, view=view, embed=embed)
+
+    async def create_action_message(self):
+        """Send dropdown for player action selection."""
+        from coup.views.game_views import create_action_view, create_action_embed
+
+        view = create_action_view(self)
+        embed = create_action_embed(self)
+        await self.send_interact_msg(
+            content=f"{self.current_player.user_name}, choose an action!",
+            view=view,
+            embed=embed
+        )
+
+    async def create_target_message(self, force_coup=False):
+        """Send dropdown for target selection."""
+        from coup.views.game_views import create_target_view, create_action_embed
+
+        view = create_target_view(self, force_coup=force_coup)
+        embed = create_action_embed(self)
+        await self.send_interact_msg(
+            content=f"{self.current_player.user_name}, select a target!",
+            view=view,
+            embed=embed
+        )
 
     def end_game(self):
         """Ends the current game."""

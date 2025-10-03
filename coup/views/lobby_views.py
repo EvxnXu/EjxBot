@@ -1,6 +1,7 @@
 # coup_views.py
-from discord.ui import Button, View
 import discord
+from discord.ui import Button, View
+
 
 def create_lobby_view(lobby, ctx):
     """
