@@ -3,6 +3,7 @@ import random
 import discord
 from .player import Player
 from .deck import Deck
+from coup.views import create_action_view, create_action_embed
 
 
 class Game:
@@ -23,7 +24,8 @@ class Game:
         self.game_thread = None # Thread for all messages relating to game
         self.deck = Deck() # Deck of cards
         self.dead_players = [] # List of Dead Players for Reference
-        self.game_active = True # State variable for run function   
+        self.game_active = True # State variable for run function
+        self.prev_msg = None # Variable to Track Previous Message to avoid message clutter
 
         # ---------------
         # Game Init Logic
@@ -44,8 +46,6 @@ class Game:
 
     async def game_loop(self, msg):
         # Create Game Thread
-        print("Creating Game Thread")
-
         try:
             self.game_thread = await msg.create_thread(
                 name=f"Game Thread"
@@ -54,9 +54,8 @@ class Game:
         except Exception as e:
             print(f"Failed to create thread: {e}")
 
-
         # Inform players the game has started
-        # self.ping_players()
+        await self.ping_players()
         
         """Game loop"""
         while self.game_active:
@@ -68,9 +67,9 @@ class Game:
         mentions = []
 
         for player in self.players:
-            mentions.append(player.user_id)
+            mentions.append(f"<@{player.user_id}>")
 
-        mention_text = " ".join(mentions)
+        mention_text = " ".join(mentions) + " The Game has begun!"
 
         await self.game_thread.send(mention_text)
 
@@ -94,6 +93,8 @@ class Game:
     def take_turn(self):
         """Current player takes their turn."""
         # current player chooses their action from roleActions + globalActions
+            # Create View for action selection
+        view = create_action_view()
         # if action requires target, choose target from players in turn order (alive players excl. self)
             # Option 1: IF action is a roleAction, players can challenge
                 # 1a. If challenge occurs, resolve challenge
@@ -102,6 +103,11 @@ class Game:
                 # 2a. if action can be blocked, resolve block logic
             # Losing influence, exchanging cards, etc. logic handled in respective methods
         # return
+    
+    def create_action_message(self):
+        """Function that creates a action message with buttons for each action"""
+        view, embed = create_action_view(), create_action_embed()
+        actor = self.current_player
 
     def block_action(self, action, actor):
         """Handles giving other players the option to block an action."""
