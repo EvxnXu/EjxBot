@@ -1,6 +1,7 @@
-from collections import deque
+import asyncio
 import random
 import discord
+from collections import deque
 from .player import Player
 from .deck import Deck
 from .action import Action
@@ -17,6 +18,8 @@ class Game:
         self.game_active = True
         self.prev_msg: discord.Message | None = None
         self.action_state = Action()
+
+        self.turn_completed = asyncio.Event() # To check for turn finish before advancing turn order
 
 
         # Deal 2 cards to each player
@@ -44,11 +47,11 @@ class Game:
         await self.ping_players()
 
         while self.game_active:
-            # Send current
-            print("game loop start!")
-            await self.take_turn() #TODO: fix here
-            print("first turn complete?")
+            await self.take_turn()
             # wait until turn is complete
+            await self.turn_completed.wait()
+            self.turn_completed.clear()
+            print("turn complete!") # debug statement
             self.advance_turn()
             
 
@@ -85,6 +88,7 @@ class Game:
 
     async def send_update_msg(self, content: str):
         """Delete previous interactable message and send a log message in thread."""
+        print("Printing update message: " + content) # debug statement
         if self.prev_msg:
             try:
                 await self.prev_msg.delete()
@@ -126,6 +130,15 @@ class Game:
             view=view,
             embed=embed
         )
+    
+    async def take_income(self):
+        """Function handling logic for active player to take income"""
+        self.current_player.gain_income(1)
+        await self.send_update_msg(
+            content=f"{self.current_player.user_name} gained 1 coin, and now has {self.current_player.coins} coins."
+        )
+        self.turn_completed.set()
+
 
     def end_game(self):
         """Ends the current game."""

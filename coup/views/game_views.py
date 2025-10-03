@@ -11,11 +11,18 @@ def create_action_view(game):
         if user.id != game.current_player.user_id:
             await interaction.response.send_message("It is not your turn!", ephemeral=True)
             return
-
-        game.action_state.action = select.values[0]
+        
+        action = select.values[0]
+        game.action_state.action = action
         select.disabled = True
         await game.send_update_msg(f"{user.name} chose {game.action_state.action}!")
         await interaction.response.defer()
+
+        # if action has a no response or target(income), call function directly
+        if action == "income":
+            await game.take_income()
+        # if action has a target , call target creation
+        # if action has a no target, but a response, call response
 
     select.callback = callback
     view = View(timeout=None)
