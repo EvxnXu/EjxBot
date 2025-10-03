@@ -1,5 +1,7 @@
 import random as random
 
+cards = ["Duke", "Assassin", "Ambassador", "Captain", "Contessa", "Inquisitor"]
+
 class Deck():
     """Model represeting the coup deck"""
     def __init__(self):
@@ -17,10 +19,14 @@ class Deck():
             raise ValueError("No cards left in the deck.")
         return self.cards.pop()
     
-    def return_card(self, card):
+    def return_deck(self, card: str):
         """Return a card to the deck for challenge or exchange"""
         self.cards.append(card)
         random.shuffle(self.cards)
+    
+    def return_revealed(self, card: str):
+        """Return a card to the revealed list as a result of lost influence"""
+        self.revealed.append(card)
 
     def show_revealed(self):
         """Show revealed cards for player reference"""

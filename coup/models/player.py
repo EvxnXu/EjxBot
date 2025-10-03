@@ -1,4 +1,4 @@
-from .deck import Deck
+# player.py
 from typing import Optional
 
 class Player():
@@ -8,7 +8,17 @@ class Player():
         self.user_name = user_name
         self.coins = 2
         self.hand = []
-        self.is_alive = True
+    
+    def is_alive(self) -> bool:
+        if len(self.hand) == 0:
+            return False
+        return True
+    
+    def check_role(self, role: str) -> bool:
+        """Checks if Player has the passed role."""
+        if role in self.hand:
+            return True
+        return False
 
     def lose_influence(self, card: Optional[str]) -> str:
         """Handles the player losing an influence (card)"""
@@ -19,7 +29,6 @@ class Player():
                 print("Player has 2 cards, needs to choose one to lose.")
                 # TODO: Implement logic for providing the user a message + view with buttons to choose card
         elif len(self.hand) == 1:
-            self.is_alive = False
             return self.hand.pop()
         else:
             raise ValueError("Player is already out of the game.")
