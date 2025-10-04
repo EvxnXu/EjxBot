@@ -5,7 +5,7 @@ from collections import deque
 from .player import Player
 from .deck import Deck
 from .action import Action
-from coup.views import create_action_view, create_target_view, create_response_view, create_action_embed, create_response_embed
+from coup.views import create_action_view, create_target_view, create_response_view, create_action_embed, create_response_embed, update_response_timer
 
 class Game:
     """Model representing the state of an ongoing game."""
@@ -72,9 +72,9 @@ class Game:
         # Must coup if coins >= 10
         if self.current_player.coins >= 10:
             self.turn_info.action = "coup"
-            await self.create_target_message(force_coup=True)
+            await self.send_target_message(force_coup=True)
         else:
-            await self.create_action_message()
+            await self.send_action_message()
     
     def advance_turn(self):
         """
@@ -126,14 +126,20 @@ class Game:
 
     async def send_interact_msg(self, view: discord.ui.View, embed: discord.Embed):
         """Send a message with an interactive view."""
+        timeout = 10 # time to respond
         if self.prev_msg:
             try:
                 await self.prev_msg.delete()
             except:
                 pass
-        self.prev_msg = await self.game_thread.send(view=view, embed=embed)
+        msg = await self.game_thread.send(view=view, embed=embed)
+        self.prev_msg = msg
 
-    async def create_action_message(self):
+        
+        # Countdown updates
+        asyncio.create_task(update_response_timer(self, msg, embed, timeout))
+
+    async def send_action_message(self):
         """Send dropdown for player action selection."""
         view = create_action_view(self)
         embed = create_action_embed(self)
@@ -142,16 +148,17 @@ class Game:
             embed=embed
         )
     
-    async def create_response_message(self):
+    async def send_response_message(self):
         """Create message with buttons to respond to an action"""
         view = create_response_view(self)
         embed = create_response_embed(self)
+
         await self.send_interact_msg(
             view=view,
             embed=embed
         )
 
-    async def create_target_message(self, force_coup=False):
+    async def send_target_message(self, force_coup=False):
         """Send dropdown for target selection."""
         view = create_target_view(self, force_coup=force_coup)
         embed = create_action_embed(self)
@@ -238,10 +245,20 @@ class Game:
                 action is not carried out (end turn)
             """
 
+    async def hand_no_response(self):
+        if self.turn_info.blocked:
+            await self.blocked_action()
+        else:
+            await self.actioN_successful()
+
 
     async def blocked_action(self):
         """Handle Blocked Action Successful."""
         self.end_turn()
+
+    async def action_successful(self):
+        """Handle successful action (no block or challenge)"""
+        # TODO: call function associated with self.turn_info.action
 
     
     # -----------------------

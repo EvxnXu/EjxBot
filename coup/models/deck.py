@@ -1,5 +1,7 @@
 import random as random
 
+cards = ["Duke", "Assassin", "Ambassador", "Captain", "Contessa", "Inquisitor"]
+
 class Deck():
     """Model represeting the coup deck"""
     def __init__(self):

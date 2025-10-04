@@ -1,3 +1,5 @@
+# game_views.py
+import asyncio
 import discord
 from discord.ui import Select, Button, View
 from coup.models.action import Action
@@ -29,7 +31,7 @@ def create_action_view(game):
         # if action has a target , call target creation
         # if action has a no target, but a response, call response
         elif action in ["foreign_aid", "tax", "exchange"]:
-            await game.create_response_message()
+            await game.send_response_message()
 
 
     select.callback = callback
@@ -77,8 +79,9 @@ def create_target_view(game, force_coup=False):
 
 def create_response_view(game):
     """Creates a view for a message responding to an action"""
-    view = View(timeout=None)
+    view = View(timeout=None) # Expires after 10 seconds
     action = game.turn_info.action
+
     # Only add block buttons if not already blocked
     if game.turn_info.blocked == False:
         if action == "steal":
@@ -91,12 +94,14 @@ def create_response_view(game):
 
     if action in Action.roleActions or game.turn_info.blocked:
         view.add_item(challenge_bt(game))
-
+    
+    print("Response View Successfully Created!")
     return view
 
 # -----------------------
 # Embeds
 # -----------------------
+
 def create_action_embed(game):
     embed = discord.Embed(
         title=f"It is {game.current_player.user_name}'s turn.",
@@ -118,6 +123,7 @@ def create_response_embed(game):
         title=title,
         description="If you would like to respond to this action, choose a response."
     )
+
     print("Response Embed Successfully Created!")
     return embed
 
@@ -125,6 +131,7 @@ def create_response_embed(game):
 # -----------------------
 # Role Block Buttons
 # -----------------------
+
 def captain_block_bt(game):
     button = Button(label="Block as Captain", style=discord.ButtonStyle.primary)
 
@@ -142,7 +149,7 @@ def captain_block_bt(game):
         await game.send_update_msg(f"{user.name} blocked the action as Captain!")
         await interaction.response.defer()
         # Allow Challenge Chance against Block
-        await game.create_response_message()
+        await game.send_response_message()
 
     button.callback = callback
     return button
@@ -164,7 +171,7 @@ def ambassador_block_bt(game):
         await game.send_update_msg(f"{user.name} blocked the action as Ambassador!")
         await interaction.response.defer()
         # Allow Challenge Chance against Block
-        await game.create_response_message()
+        await game.send_response_message()
 
     button.callback = callback
     return button
@@ -186,7 +193,7 @@ def duke_block_bt(game):
         await game.send_update_msg(f"{user.name} blocked the action as Duke!")
         await interaction.response.defer()
         # Allow Challenge Chance against Block
-        await game.create_response_message()
+        await game.send_response_message()
 
     button.callback = callback
     return button
@@ -195,8 +202,9 @@ def ambessa_block_bt(game):
     button = Button(label="Block as Ambessa", )
 
 # -----------------------
-# Challenge Button
+# Other Buttons
 # -----------------------
+
 def challenge_bt(game):
     button = Button(label="Challenge", style=discord.ButtonStyle.danger)
 
@@ -229,3 +237,26 @@ def challenge_bt(game):
     button.callback = callback
     return button
 
+# --------------
+# Misc.
+# --------------
+
+async def update_response_timer(game, msg, embed, timeout):
+    """Function that updates the response embed to show time left to respond"""
+    print("entered update_response_timer func.")
+    for remaining in range(timeout, 0, -1):
+        # Edit the embed description to update countdown
+        print(remaining)
+        embed.description = f"{remaining} seconds left to respond."
+
+        try:
+            await msg.edit(embed=embed)
+        except Exception as e:
+            print(f"Error editing message: {e}")
+            return
+        
+        await asyncio.sleep(1)
+
+    # Time's Up
+    await game.send_update_msg("No one responded. Proceeding...") # Should delete response message
+    await game.handle_no_response()
