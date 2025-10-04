@@ -5,20 +5,22 @@ from collections import deque
 from .player import Player
 from .deck import Deck
 from .action import Action
-
+from coup.views import create_action_view, create_target_view, create_response_view, create_action_embed, create_response_embed
 
 class Game:
     """Model representing the state of an ongoing game."""
     def __init__(self, players: dict):
         # Create Player objects from the input mapping
         self.players = [Player(user_id, user_name) for user_id, user_name in players.items()]
-        self.game_thread: discord.Thread | None = None
         self.deck = Deck()
         self.dead_players: list[Player] = []
         self.game_active = True
-        self.prev_msg: discord.Message | None = None
-        self.action_state = Action()
 
+        self.game_thread: discord.Thread | None = None
+        self.prev_msg: discord.Message | None = None
+
+        self.current_player = None
+        self.turn_info = Action()
         self.turn_completed = asyncio.Event() # To check for turn finish before advancing turn order
 
 
@@ -35,6 +37,11 @@ class Game:
         else:
             raise ValueError("Game has no players.")
 
+        
+    # -----------------------
+    # Game Functions
+    # -----------------------
+
     async def game_loop(self, msg: discord.Message):
         """Main game loop."""
         # Create game thread
@@ -48,18 +55,27 @@ class Game:
 
         while self.game_active:
             await self.take_turn()
+
             # wait until turn is complete
             await self.turn_completed.wait()
             self.turn_completed.clear()
+
             print("turn complete!") # debug statement
+            self.turn_info = Action() # Reset Action State
+
             self.advance_turn()
-            
 
-    async def ping_players(self):
-        """Ping all players at start of game."""
-        mentions = " ".join([f"<@{p.user_id}>" for p in self.players])
-        await self.game_thread.send(mentions + " The game has begun!")
-
+            #TODO: return some result TBD
+    
+    async def take_turn(self):
+        """Handle current player's turn."""
+        # Must coup if coins >= 10
+        if self.current_player.coins >= 10:
+            self.turn_info.action = "coup"
+            await self.create_target_message(force_coup=True)
+        else:
+            await self.create_action_message()
+    
     def advance_turn(self):
         """
         Advance to the next player's turn.
@@ -73,19 +89,27 @@ class Game:
         self.turn_order.append(self.current_player)
         self.current_player = self.turn_order.popleft()
 
+    # -----------------------
+    # Misc.
+    # -----------------------
+
+    async def ping_players(self):
+        """Ping all players at start of game to invite them to game thread."""
+        mentions = " ".join([f"<@{p.user_id}>" for p in self.players])
+        await self.game_thread.send(mentions + " The game has begun!")
+
+    def get_player_ids(self):
+        """Return list of player IDs in game"""
+        return [p.user_id for p in self.players]
+
     def get_turn_order_ids(self):
         """Return list of player IDs in turn order."""
         return [p.user_id for p in self.turn_order]
-
-    async def take_turn(self):
-        """Handle current player's turn."""
-        # Must coup if coins >= 10
-        if self.current_player.coins >= 10:
-            await self.create_target_message(force_coup=True)
-        else:
-            print("Create Action Message being called")
-            await self.create_action_message()
-
+    
+    # -----------------------
+    # Message Handling
+    # -----------------------
+    
     async def send_update_msg(self, content: str):
         """Delete previous interactable message and send a log message in thread."""
         print("Printing update message: " + content) # debug statement
@@ -95,50 +119,138 @@ class Game:
             except:
                 pass
         self.prev_msg = None
-        await self.game_thread.send(content)
+        embed = discord.Embed(
+            description = content
+        )
+        await self.game_thread.send(embed=embed)
 
-    async def send_interact_msg(self, content: str, view: discord.ui.View, embed: discord.Embed):
+    async def send_interact_msg(self, view: discord.ui.View, embed: discord.Embed):
         """Send a message with an interactive view."""
         if self.prev_msg:
             try:
                 await self.prev_msg.delete()
             except:
                 pass
-        self.prev_msg = await self.game_thread.send(content=content, view=view, embed=embed)
+        self.prev_msg = await self.game_thread.send(view=view, embed=embed)
 
     async def create_action_message(self):
         """Send dropdown for player action selection."""
-        from coup.views.game_views import create_action_view, create_action_embed
-
-        print("action message create function reached!")
         view = create_action_view(self)
         embed = create_action_embed(self)
         await self.send_interact_msg(
-            content=f"{self.current_player.user_name}, choose an action!",
+            view=view,
+            embed=embed
+        )
+    
+    async def create_response_message(self):
+        """Create message with buttons to respond to an action"""
+        view = create_response_view(self)
+        embed = create_response_embed(self)
+        await self.send_interact_msg(
             view=view,
             embed=embed
         )
 
     async def create_target_message(self, force_coup=False):
         """Send dropdown for target selection."""
-        from coup.views.game_views import create_target_view, create_action_embed
-
         view = create_target_view(self, force_coup=force_coup)
         embed = create_action_embed(self)
         await self.send_interact_msg(
-            content=f"{self.current_player.user_name}, select a target!",
             view=view,
             embed=embed
         )
     
+    # -----------------------
+    # Successful Actions
+    # -----------------------
+
     async def take_income(self):
-        """Function handling logic for active player to take income"""
+        """Active player takes income"""
+        print("Take Income")
         self.current_player.gain_income(1)
         await self.send_update_msg(
             content=f"{self.current_player.user_name} gained 1 coin, and now has {self.current_player.coins} coins."
         )
-        self.turn_completed.set()
+        await self.end_turn()
+    
+    async def collect_foreign_aid(self):
+        """Active player takes foreign aid"""
+        self.current_player.gain_income(2)
+        await self.send_update_msg(
+            content=f"{self.current_player.user_name} gained 2 coins, and now has {self.current_player.coins} coins."
+        )
+        await self.end_turn()
+    
+    async def collect_tax(self):
+        """Active player collects tax"""
+        self.current_player.gain_income(3)
+        await self.send_update_msg(
+           content=f"{self.current_player.user_name} gained 3 coins, and now has {self.current_player.coins} coins."
+        )
+        await self.end_turn()
+    
+    async def coup(self):
+        """Active player coups target"""
+        self.current_player.spend_coins(7)
+        # Find target's Player object
+        for target in self.players:
+            if target.user_id == self.turn_info.target_id:
+                # Target loses influence
+                self.deck.return_revealed(target.lose_influence())
+                if not target.is_alive(): # If target dies:
+                    # 1. Remove from turn order
+                    self.turn_order.remove(target)
+                    # 2. Move from players to dead_players
+                    self.players.remove(target)
+                    self.dead_players.append(target)
+        await self.end_turn()
 
+    # -----------------------
+    # Challenge/Block Logic
+    # -----------------------
+
+    async def handle_challenge(self):
+        """Handle Who wins the Challenge."""
+        print("Handle Action Called!")
+        action = self.turn_info.action
+        # Case: Challenge is made on blocker
+        if self.turn_info.blocked == True:
+            role = self.turn_info.blocking_role
+            """
+            If blocker has role in hand:
+                challenger loses influence
+                blocker swaps associated role
+                action is not carried out (end turn)
+            If blocker does not have role in hand:
+                blocker loses influence
+                action is carried out (call action)
+            """
+        # Case: Challenge is made on actor
+        else:
+            role = Action.getRole[self.turn_info.action]
+            """
+            If actor has role in hand:
+                challenger loses influence
+                actor swaps associated role
+                action is carried out.
+            If actor does not have role in hand:
+                actor loses influence
+                action is not carried out (end turn)
+            """
+
+
+    async def blocked_action(self):
+        """Handle Blocked Action Successful."""
+        self.end_turn()
+
+    
+    # -----------------------
+    # State Update Functions
+    # -----------------------
+
+    async def end_turn(self):
+        """Set the turn to done"""
+        self.turn_completed.set()
 
     def end_game(self):
         """Ends the current game."""
