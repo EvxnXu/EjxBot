@@ -124,9 +124,8 @@ class Game:
         )
         await self.game_thread.send(embed=embed)
 
-    async def send_interact_msg(self, view: discord.ui.View, embed: discord.Embed):
+    async def send_interact_msg(self, view: discord.ui.View, embed: discord.Embed, response_msg: bool):
         """Send a message with an interactive view."""
-        timeout = 10 # time to respond
         if self.prev_msg:
             try:
                 await self.prev_msg.delete()
@@ -136,8 +135,10 @@ class Game:
         self.prev_msg = msg
 
         
-        # Countdown updates
-        asyncio.create_task(update_response_timer(self, msg, embed, timeout))
+        # Countdown updates for non-update messages
+        if response_msg:
+            timeout = 10 # time to respond
+            asyncio.create_task(update_response_timer(self, msg, embed, timeout))
 
     async def send_action_message(self):
         """Send dropdown for player action selection."""
@@ -145,7 +146,8 @@ class Game:
         embed = create_action_embed(self)
         await self.send_interact_msg(
             view=view,
-            embed=embed
+            embed=embed,
+            response_msg=False
         )
     
     async def send_response_message(self):
@@ -155,7 +157,8 @@ class Game:
 
         await self.send_interact_msg(
             view=view,
-            embed=embed
+            embed=embed,
+            response_msg=True
         )
 
     async def send_target_message(self, force_coup=False):
@@ -164,7 +167,8 @@ class Game:
         embed = create_action_embed(self)
         await self.send_interact_msg(
             view=view,
-            embed=embed
+            embed=embed,
+            response_msg=False
         )
     
     # -----------------------
@@ -245,12 +249,11 @@ class Game:
                 action is not carried out (end turn)
             """
 
-    async def hand_no_response(self):
+    async def handle_no_response(self):
         if self.turn_info.blocked:
             await self.blocked_action()
         else:
             await self.actioN_successful()
-
 
     async def blocked_action(self):
         """Handle Blocked Action Successful."""
@@ -259,6 +262,17 @@ class Game:
     async def action_successful(self):
         """Handle successful action (no block or challenge)"""
         # TODO: call function associated with self.turn_info.action
+        action = self.turn_info.action
+        match action:
+            case "income": 
+                await self.take_income()
+            case "foreign_aid":
+                await self.collect_foreign_aid()
+            case "coup":
+                await self.coup()
+            case "tax":
+                await self.collect_tax()
+            # TODO: Map other actions to relevant functions
 
     
     # -----------------------
