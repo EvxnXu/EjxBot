@@ -253,11 +253,11 @@ class Game:
         if self.turn_info.blocked:
             await self.blocked_action()
         else:
-            await self.actioN_successful()
+            await self.action_successful()
 
     async def blocked_action(self):
         """Handle Blocked Action Successful."""
-        self.end_turn()
+        await self.end_turn()
 
     async def action_successful(self):
         """Handle successful action (no block or challenge)"""
