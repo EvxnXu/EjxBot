@@ -207,13 +207,21 @@ class Game:
             if target.user_id == self.turn_info.target_id:
                 # Target loses influence
                 self.deck.return_revealed(target.lose_influence())
-                if not target.is_alive(): # If target dies:
-                    # 1. Remove from turn order
-                    self.turn_order.remove(target)
-                    # 2. Move from players to dead_players
-                    self.players.remove(target)
-                    self.dead_players.append(target)
+                
         await self.end_turn()
+    
+    async def check_alive(self, player: Player):
+        """Hanndle Player Death if Player Loses Influence"""
+        if not player.is_alive():
+            # Remove the dead player form the turn order
+            if player == self.current_player:
+                self.current_player = None
+            else:
+                self.turn_order.remove(player)
+            # Move from players to dead_players
+            self.players.remove(player)
+            self.dead_players.append(player)
+        return
 
     # -----------------------
     # Challenge/Block Logic
