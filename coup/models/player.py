@@ -1,4 +1,4 @@
-from .deck import Deck
+# player.py
 from typing import Optional
 
 class Player():
@@ -13,6 +13,12 @@ class Player():
         if len(self.hand) == 0:
             return False
         return True
+    
+    def check_role(self, role: str) -> bool:
+        """Checks if Player has the passed role."""
+        if role in self.hand:
+            return True
+        return False
 
     def lose_influence(self, card: Optional[str]) -> str:
         """Handles the player losing an influence (card)"""
