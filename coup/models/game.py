@@ -247,32 +247,30 @@ class Game:
             # If blocker does not have role they are blocking with
             if not blocker.check_role(self.turn_info.blocking_role):
                 self.deck.return_revealed(blocker.lose_influence()) # Blocker loses influence
+                self.check_alive(blocker)
                 self.action_successful() # Carry out the action
             # If blocker has role
             else:
                 self.deck.return_revealed(challenger.lose_influence()) # Challenger loses influence
                 self.deck.return_deck(blocker.lose_influence(self.turn_info.blocking_role)) # Blocker swaps associated role
                 blocker.gain_influence(self.deck.draw())
-                self.check_alive(challenger)
-
-            """
-            If blocker has role in hand:
-                challenger loses influence
-                blocker swaps associated role
-                action is not carried out (end turn)
-            """
+                self.check_alive(challenger) # Check if challenger is alive
+                self.blocked_action() # Action is Blocked Succesfully
         # Case: Challenge is made on actor
         else:
             role = Action.getRole[self.turn_info.action]
-            """
-            If actor has role in hand:
-                challenger loses influence
-                actor swaps associated role
-                action is carried out.
-            If actor does not have role in hand:
-                actor loses influence
-                action is not carried out (end turn)
-            """
+            # If actor does nto have role in hand
+            if not self.current_player.check_role(role):
+                self.deck.return_revealed(self.current_player.lose_influence()) # Actor loses influence
+                self.check_alive(self.current_player)
+                self.blocked_action() # Action is Challenged Succesfully (Effectively Blocked)
+            # If actor has role in hand
+            else:
+                self.deck.return_revealed(challenger.lose_influence()) # Challenger loses influence
+                self.deck.return_deck(self.current_player.lose_influence(role)) # Actor swaps acting role
+                self.current_player.gain_influence(self.deck.draw())
+                self.check_alive(challenger) # Check if challenger is alive
+                self.action_successful() # Proceed with action
 
     async def handle_no_response(self):
         if self.turn_info.blocked:
