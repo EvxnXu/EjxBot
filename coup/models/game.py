@@ -231,17 +231,35 @@ class Game:
         """Handle Who wins the Challenge."""
         print("Handle Action Called!")
         action = self.turn_info.action
+        # Get the blocker and challenger Player Objects
+        blocker, challenger = None, None
+        for player in self.players():
+            if self.turn_info.blocker_id == player.id:
+                blocker = player
+            elif self.turn_info.challenger_id == player.id:
+                challenger = player
+        # Error Handling
+        if not blocker or not challenger:
+            raise AttributeError("Blocker or Challenger not found.")
+        
         # Case: Challenge is made on blocker
         if self.turn_info.blocked == True:
-            role = self.turn_info.blocking_role
+            # If blocker does not have role they are blocking with
+            if not blocker.check_role(self.turn_info.blocking_role):
+                self.deck.return_revealed(blocker.lose_influence()) # Blocker loses influence
+                self.action_successful() # Carry out the action
+            # If blocker has role
+            else:
+                self.deck.return_revealed(challenger.lose_influence()) # Challenger loses influence
+                self.deck.return_deck(blocker.lose_influence(self.turn_info.blocking_role)) # Blocker swaps associated role
+                blocker.gain_influence(self.deck.draw())
+                self.check_alive(challenger)
+
             """
             If blocker has role in hand:
                 challenger loses influence
                 blocker swaps associated role
                 action is not carried out (end turn)
-            If blocker does not have role in hand:
-                blocker loses influence
-                action is carried out (call action)
             """
         # Case: Challenge is made on actor
         else:
@@ -290,7 +308,7 @@ class Game:
         """Set the turn to done"""
         self.turn_completed.set()
 
-    def end_game(self):
+    async def end_game(self):
         """Ends the current game."""
         self.game_active = False
     
