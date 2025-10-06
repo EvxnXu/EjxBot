@@ -63,7 +63,7 @@ class Game:
             print("turn complete!") # debug statement
             self.turn_info = Action() # Reset Action State
 
-            self.advance_turn()
+            await self.advance_turn()
 
             #TODO: return some result TBD
     
@@ -76,17 +76,16 @@ class Game:
         else:
             await self.send_action_message()
     
-    def advance_turn(self):
-        """
-        Advance to the next player's turn.
-        Current player moves to the end of the deque.
-        Front of the deque becomes current player.
-        If no players left to go, only one player left --> end game
-        """
+    async def advance_turn(self):
+        """Advance to the next player's turn."""
+        # If no players other than current player, current player has won. End game
         if not self.turn_order:
-            self.end_game()
+            await self.end_game()
             return
-        self.turn_order.append(self.current_player)
+        # If current player isn't dead, add them to the end of the turn order
+        if self.current_player:
+            self.turn_order.append(self.current_player)
+        # New active player is the front of the turn order.
         self.current_player = self.turn_order.popleft()
 
     # -----------------------
