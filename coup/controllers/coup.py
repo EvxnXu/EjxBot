@@ -29,9 +29,6 @@ class Coup(commands.Cog):
         lobby = Lobby(self.next_id, ctx)
         self.lobbies[self.next_id] = lobby
 
-        # Debug Statement
-        logger.info(f"Lobby {lobby.lobby_id} created.")
-
         # Update next lobby id
         self.next_id += 1
 
