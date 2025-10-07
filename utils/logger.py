@@ -5,33 +5,38 @@ import sys
 from logging.handlers import TimedRotatingFileHandler
 
 def setup_logger(name):
-    """Sets up a daily rotating logger that saves to logs/YYYY-MM-DD.log"""
+    """Sets up a daily rotating logger that saves to logs/{name}.log and merged.log"""
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
 
-    # Name log file depending on name
-    log_path = os.path.join(log_dir, f"{name}.log")
+    # Create logger
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False  # Prevent double logging if root logger also logs
 
-    # File handler (rotates daily, keeps 7 days)
-    handler = TimedRotatingFileHandler(
+    # File handler for this logger
+    log_path = os.path.join(log_dir, f"{name}.log")
+    file_handler = TimedRotatingFileHandler(
         log_path, when="midnight", interval=1, backupCount=7, encoding="utf-8"
     )
-    handler.suffix="%Y-%m-%d"
+    file_handler.suffix = "%Y-%m-%d"
+    file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 
     # Console handler
     console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 
-    # Formatter
-    formatter = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    # Merged file handler
+    merged_path = os.path.join(log_dir, "merged.log")
+    merged_handler = TimedRotatingFileHandler(
+        merged_path, when="midnight", interval=1, backupCount=7, encoding="utf-8"
     )
-    handler.setFormatter(formatter)
+    merged_handler.suffix = "%Y-%m-%d"
+    merged_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
 
-    # Logger
-    logger = logging.getLogger(name)
+    # Add handlers to logger
+    logger.addHandler(file_handler)
     logger.addHandler(console_handler)
-    logger.addHandler(handler)
-    logger.propagate = False
-    logger.setLevel(logging.INFO)
+    logger.addHandler(merged_handler)
 
     return logger
