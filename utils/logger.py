@@ -8,7 +8,10 @@ def setup_logger(name):
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
 
-    log_path = os.path.join(log_dir, "game.log")
+    if name == "coup":
+        log_path = os.path.join(log_dir, "coup.log")
+    else:
+        log_path = os.path.join(log_dir, "bot.log")
 
     handler = TimedRotatingFileHandler(
         log_path, when="midnight", interval=1, backupCount=7, encoding="utf-8"
