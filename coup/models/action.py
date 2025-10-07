@@ -65,10 +65,13 @@ class Exchange(Action):
         game.deck.return_deck(self.actor.lose_influence()) # Lose actor's choice of influence
         self.actor.gain_influence(game.deck.draw()) # Draw a new role card
 
-class Assasinate(Action):
+class Assassinate(Action):
     name = "assassinate"
     async def execute(self, game):
         game.deck.return_revealed(self.target.lose_influence()) # Target Loses Influence
+        self.actor.spend_coins(3) # Actor spends 3 coins
+        await game.end_turn()
+    async def on_block(self, game, blocker):
         self.actor.spend_coins(3) # Actor spends 3 coins
         await game.end_turn()
 
