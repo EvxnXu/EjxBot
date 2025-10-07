@@ -10,6 +10,10 @@ from dotenv import load_dotenv
 # load environment variables from .env file
 load_dotenv()
 
+# Setup up loggers
+coup_logger = setup_logger("coup")
+bot_logger = setup_logger("bot")
+
 # Set up intents
 intents = discord.Intents.default()
 intents.message_content = True
@@ -20,13 +24,10 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 # Debug
 @bot.event
 async def on_ready():
-    # Create General bot logger
-    bot_logger = setup_logger("bot")
     bot_logger.info(f'Logged in as {bot.user}')  # This confirms the bot is logged in
 
 async def main():
     # Load Coup cog
-    coup_logger = setup_logger("coup")
     await setup_coup(bot)
     await bot.start(os.getenv("DISCORD_BOT_TOKEN"))
 
