@@ -1,16 +1,21 @@
 # game_views.py
 import asyncio
 import discord
+import logging
 from discord.ui import Select, Button, View
-from coup.models.action import Action
+from coup.models import Action, Income, Foreign_Aid, Tax, Coup, Exchange, Assassinate, Steal
+
+logger = logging.getLogger("coup")
 
 # -----------------------
 # Views
 # -----------------------
 
 def create_action_view(game):
-    """Create a view object for a message allowing Player to choose their action for the turn"""
-    options = [discord.SelectOption(label=a, value=a) for a in Action.turnActions]
+    """Create and return a Discord UI View allowing current player to choose an action for their turn"""
+    actions = [Income, Foreign_Aid, Coup, Tax, Exchange, Assassinate, Steal]
+    options = [discord.SelectOption(label=a.name, value=a.name) for a in actions]
+    mapping = {a.name: a for a in actions}
     select = Select(placeholder="Choose your action...", options=options, min_values=1, max_values=1)
 
     async def callback(interaction: discord.Interaction):
@@ -18,21 +23,17 @@ def create_action_view(game):
         if user.id != game.current_player.user_id:
             await interaction.response.send_message("It is not your turn!", ephemeral=True)
             return
-        
-        action = select.values[0]
-        game.turn_info.action = action
+     
+        choice = select.values[0]
+        action_class: Action = mapping[choice]
+
+        # Disable select immediately
         select.disabled = True
-        await game.send_update_msg(f"{user.name} chose {game.turn_info.action}!")
-        await interaction.response.defer()
+        await interaction.response.edit_message(view=view)
 
-        # if action has a no response or target(income), call function directly
-        if action == "income":
-            await game.take_income()
-        # if action has a target , call target creation
-        # if action has a no target, but a response, call response
-        elif action in ["foreign_aid", "tax", "exchange"]:
-            await game.send_response_message()
-
+        # Send Update and Handle Action
+        await game.send_update_msg(f"{user.name} chose {choice}!")
+        await game.action_selected(action_class)
 
     select.callback = callback
     view = View(timeout=None)
@@ -41,61 +42,74 @@ def create_action_view(game):
 
 def create_target_view(game, force_coup=False):
     """Create dropdown select for a targeted action."""
-    targets = [p for p in game.players if p.user_id != game.current_player.user_id]
+    current_player = game.current_player
+    targets = [p for p in game.players if p.user_id != current_player.user_id]
+
+    # Error Handling
+    if not targets: 
+        logger.error(f"{current_player} has no targets in {game}")
+        return
+
     options = [
         discord.SelectOption(
             label=p.user_name,
-            value=f"{p.user_id}:{p.user_name}"   # pack both id and name
+            value=str(p.user_id)
         )
         for p in targets
     ]
-    select = Select(placeholder=f"Choose a target for {game.turn_info.action}...", options=options, min_values=1, max_values=1)
+
+    select = Select(
+        placeholder=f"Choose a target for {game.current_action.name}...", 
+        options=options, 
+        min_values=1, 
+        max_values=1
+    )
 
     async def callback(interaction: discord.Interaction):
         user = interaction.user
+
         if user.id != game.current_player.user_id:
             await interaction.response.send_message("It is not your turn!", ephemeral=True)
             return
 
-        raw_value = select.values[0]
-        selected_id_str, selected_name = raw_value.split(":", 1)
-        selected_id = int(selected_id_str)
+        target_id = int(select.values[0])
+        target_player = game.get_player_by_id(target_id)
 
-        game.turn_info.target_id = selected_id
-        game.turn_info.target_name = selected_name
+        # Disable select immediately
+        select.disabled = True
+        await interaction.message.edit(view=view)
 
-        action_name = "forced coup" if force_coup else game.turn_info.action
+        game.current_action.target = target_player
+
         await game.send_update_msg(
-            f"{user.name} is attempting {action_name} on {selected_name} (<@{selected_id}>)!"
+            f"{user.name} is attempting {game.current_action.name} on {target_player.user_name} (<@{target_id}>)!"
         )
-
         await interaction.response.defer()
+        await game.target_selected()
 
     select.callback = callback
     view = View(timeout=None)
     view.add_item(select)
     return view
 
-
 def create_response_view(game):
     """Creates a view for a message responding to an action"""
-    view = View(timeout=None) # Expires after 10 seconds
-    action = game.turn_info.action
+    view = View(timeout=None)
+    action: Action = game.current_action
+
+    if not action:
+        logger.error("No action found.")
+        return
 
     # Only add block buttons if not already blocked
-    if game.turn_info.blocked == False:
-        if action == "steal":
-            view.add_item(captain_block_bt(game))
-            view.add_item(ambassador_block_bt(game))
-        elif action == "foreign_aid":
-            view.add_item(duke_block_bt(game))
-        elif action == "assassinate":
-            view.add_item(ambessa_block_bt(game))
+    if action.blocked == False and action.blockable():
+        logger.info("Adding Block Button to Response Message.")
+        view.add_item(create_block_button(game))
 
-    if action in Action.roleActions or game.turn_info.blocked:
-        view.add_item(challenge_bt(game))
+    if isinstance(action, (Tax, Assassinate, Exchange, Steal)) or action.blocked:
+        view.add_item(create_challenge_button(game))
+        logger.info("Adding Challenge Button to Response Message.")
     
-    print("Response View Successfully Created!")
     return view
 
 # -----------------------
@@ -105,128 +119,77 @@ def create_response_view(game):
 def create_action_embed(game):
     embed = discord.Embed(
         title=f"It is {game.current_player.user_name}'s turn.",
-        description="Please choose a universal action or role action for your turn"
+        description="Please choose an action for your turn"
     )
-    print("Action Embed Successfully Created!")
     return embed
 
 def create_response_embed(game):
     # Build title depending on whether the action has a target and a response is occuring
-    if game.turn_info.blocked:
-        title = f"{game.turn_info.blocker_name} is attempting to block {game.current_player.user_name} from {game.turn_info.action}"
-    elif game.turn_info.target_name:
-        title = f"{game.current_player.user_name} is attempting to {game.turn_info.action} targeting {game.turn_info.target_name}"
-    else:
-        title = f"{game.current_player.user_name} is attempting to {game.turn_info.action}"
     # TODO: Clean up the title
     embed = discord.Embed(
-        title=title,
         description="If you would like to respond to this action, choose a response."
     )
 
-    print("Response Embed Successfully Created!")
     return embed
 
+def create_target_embed(game):
+    embed = discord.Embed(
+        title=f"{game.current_player.user_id}, please choose a target for {game.current_action.name}:"
+    )
+    return embed
 
 # -----------------------
-# Role Block Buttons
+# Buttons
 # -----------------------
 
-def captain_block_bt(game):
-    button = Button(label="Block as Captain", style=discord.ButtonStyle.primary)
+def create_block_button(game):
+    """Generic Block Button"""
+    button = Button(label="Block", style=discord.ButtonStyle.primary)
 
     async def callback(interaction: discord.Interaction):
         user = interaction.user
-        if user.id not in game.get_turn_order_ids() or user.id == game.current_player.user_id:
+        action: Action = game.current_action
+
+        # Validate that the user can block
+        if user.id == action.actor.user_id or user.id not in game.get_turn_order_ids():
             await interaction.response.send_message("You cannot block!", ephemeral=True)
             return
-        # Update Game's Action State
-        game.turn_info.blocked = True
-        game.turn_info.blocker_id = user.id
-        game.turn_info.blocker_name = user.name
-        game.turn_info.blocking_role = "Ambassador"
-        # Send Update Message Logging Block
-        await game.send_update_msg(f"{user.name} blocked the action as Captain!")
-        await interaction.response.defer()
-        # Allow Challenge Chance against Block
-        await game.send_response_message()
+        
+        # Update Action
+        action.blocking_role = None # TODO: Implement a way to choose (2 roles can block steal)
+        action.blocked = True
+        action.blocker = game.get_player_by_id(user.id)
 
+        # Give chance to challenge
+        await game.send_response_message()
+    
     button.callback = callback
     return button
 
-def ambassador_block_bt(game):
-    button = Button(label="Block as Ambassador", style=discord.ButtonStyle.secondary)
-
-    async def callback(interaction: discord.Interaction):
-        user = interaction.user
-        if user.id not in game.get_turn_order_ids() or user.id == game.current_player.user_id:
-            await interaction.response.send_message("You cannot block!", ephemeral=True)
-            return
-        # Update Game's Action State
-        game.turn_info.blocked = True
-        game.turn_info.blocker_id = user.id
-        game.turn_info.blocker_name = user.name
-        game.turn_info.blocking_role = "Ambassador"
-        # Send Update Message Logging Block
-        await game.send_update_msg(f"{user.name} blocked the action as Ambassador!")
-        await interaction.response.defer()
-        # Allow Challenge Chance against Block
-        await game.send_response_message()
-
-    button.callback = callback
-    return button
-
-def duke_block_bt(game):
-    button = Button(label="Block as Duke", style=discord.ButtonStyle.danger)
-
-    async def callback(interaction: discord.Interaction):
-        user = interaction.user
-        if user.id not in game.get_turn_order_ids() or user.id == game.current_player.user_id:
-            await interaction.response.send_message("You cannot block!", ephemeral=True)
-            return
-        # Update Game's Action State
-        game.turn_info.blocked = True
-        game.turn_info.blocker_id = user.id
-        game.turn_info.blocker_name = user.name
-        game.turn_info.blocking_role = "Duke"
-        # Send Update Message Logging Block
-        await game.send_update_msg(f"{user.name} blocked the action as Duke!")
-        await interaction.response.defer()
-        # Allow Challenge Chance against Block
-        await game.send_response_message()
-
-    button.callback = callback
-    return button
-
-def ambessa_block_bt(game):
-    button = Button(label="Block as Ambessa", )
-
-# -----------------------
-# Other Buttons
-# -----------------------
-
-def challenge_bt(game):
+def create_challenge_button(game):
     button = Button(label="Challenge", style=discord.ButtonStyle.danger)
 
     async def callback(interaction: discord.Interaction):
         user = interaction.user
-        # Check for valid user
-        # Case: Challenging an Action
-        if not game.turn_info.blocked:
-            if user.id not in game.get_turn_order_ids() or user.id == game.current_player.user_id:
-                await interaction.response.send_message("You cannot challenge!", ephemeral=True)
+        action: Action = game.current_action
+
+        if action.blocked:
+            # Challenging the block
+            if user.id == action.blocker.user_id or user.id not in game.get_player_ids():
+                await interaction.response.send_message("You cannot challenge this block!", ephemeral=True)
                 return
-        # Case: Challenging a Block
         else:
-            if user.id == game.turn_info.blocker_id or user.id not in game.get_player_ids():
-                await interaction.response.send_message("You cannot challenge!", ephemeral=True)
+            # Challenging the Action
+            if user.id not in game.get_turn_order_ids() or user.id == action.actor.user_id:
+                await interaction.response.send_message("You cannot challenge this action!", ephemeral=True)
                 return
-        # Update Turn Info
-        game.turn_info.challenged = True
-        game.turn_info.challenger_id = user.id
-        game.turn_info.challenger_name = user.name
+
+        # Update Action object
+        action.challenged = True
+        action.challenger = game.get_player_by_id(user.id)
+
         # Send Update Message
-        if game.turn_info.blocked == False:
+        if game.current_action.blocked == False:
             await game.send_update_msg(f"{user.name} has challenged the action!")
         else:
             await game.send_update_msg(f"{user.name} has challenged the role block!")
@@ -246,17 +209,17 @@ async def update_response_timer(game, msg, embed, timeout):
     print("entered update_response_timer func.")
     for remaining in range(timeout, 0, -1):
         # Edit the embed description to update countdown
-        print(remaining)
+        logger.info(f"{remaining} seconds left for a response.")
         embed.description = f"{remaining} seconds left to respond."
 
         try:
             await msg.edit(embed=embed)
         except Exception as e:
-            print(f"Error editing message: {e}")
+            logger.error(f"Error editing message: {e}")
             return
         
         await asyncio.sleep(1)
 
     # Time's Up
     await game.send_update_msg("No one responded. Proceeding...") # Should delete response message
-    await game.handle_no_response()
+    await game.no_response()

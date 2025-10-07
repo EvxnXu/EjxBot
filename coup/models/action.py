@@ -9,6 +9,7 @@ logger = logging.getLogger("coup")
 class Action(ABC):
     """Base class for all game actions"""
     name: str = "base"
+    role: str = "base"
 
     def __init__(self, actor: Player, target: Optional[Player] = None):
         self.actor = actor
@@ -32,9 +33,9 @@ class Action(ABC):
     async def execute(self, game):
         logger.error("Base Class Method Called")
         
-    async def on_block(self, game, blocker):
-        logger.error("Base Class Method Called")
-        pass
+    async def on_block(self, game):
+        # Default Behavior: Action doesn't go through, end turn
+        await game.end_turn()
 
     def is_valid(self) -> bool:
         return True
@@ -44,6 +45,9 @@ class Action(ABC):
     
     def can_respond(self) -> bool:
         return True
+    
+    def blockable(self) -> bool:
+        return False
     
 class Income(Action):
     name = "income"
@@ -67,9 +71,13 @@ class Foreign_Aid(Action):
             content=f"{self.actor.user_name} gained 2 coins. They now have {self.actor.coins} coin(s)."
         )
         await game.end_turn()
+    
+    def blockable(self):
+        return True
 
 class Tax(Action):
     name = "tax"
+    role = "Duke"
 
     async def execute(self, game):
         self.actor.gain_income(3)
@@ -99,6 +107,7 @@ class Coup(Action):
 
 class Exchange(Action):
     name = "exchange"
+    role = "Ambassador"
 
     async def execute(self, game):
         game.deck.return_deck(self.actor.lose_influence()) # Lose actor's choice of influence
@@ -106,6 +115,7 @@ class Exchange(Action):
 
 class Assassinate(Action):
     name = "assassinate"
+    role = "Assassin"
 
     async def execute(self, game):
         game.deck.return_revealed(self.target.lose_influence()) # Target Loses Influence
@@ -123,9 +133,13 @@ class Assassinate(Action):
     
     def has_target(self):
         return True
+    
+    def blockable(self):
+        return True
 
 class Steal(Action):
     name = "steal"
+    role = "Captain"
 
     async def execute(self, game):
         self.target.lose_coins(2) # Target loses 2 coins
@@ -134,6 +148,9 @@ class Steal(Action):
         await game.end_turn()
 
     def has_target(self):
+        return True
+    
+    def blockable(self):
         return True
 
 

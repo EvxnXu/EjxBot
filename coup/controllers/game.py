@@ -4,10 +4,8 @@ import random
 import discord
 import logging
 from collections import deque
-from models.player import Player
-from models.deck import Deck
-from models.action import Action, Coup
-from coup.views import create_action_view, create_target_view, create_response_view, create_action_embed, create_response_embed, update_response_timer
+from coup.models import Player, Deck, Action, Coup
+from coup.views import create_action_view, create_target_view, create_response_view, create_action_embed, create_response_embed, create_target_embed, update_response_timer
 
 logger = logging.getLogger("coup")
 
@@ -26,7 +24,7 @@ class Game:
         # Turn Data
         self.turn_order = deque()
         self.current_player: Player | None = None
-        self.turn_action = None
+        self.current_action: Action = None
         self.turn_completed = asyncio.Event() # To check for turn finish before advancing turn order
 
         # Deal 2 cards to each player
@@ -46,7 +44,7 @@ class Game:
     def __repr__(self):
         return (
             f"<Game current_player={self.current_player} "
-            f"turn_info={self.turn_info} "
+            f"turn_info={self.current_action} "
             f"turn_order={self.get_turn_order_ids()} deck={self.deck}>"
         )
         
@@ -58,7 +56,7 @@ class Game:
         """Main game loop."""
         # Create game thread
         try:
-            self.game_thread = await msg.create_thread(name="Game Thread")
+            self.game_thread = await msg.create_thread(name="Game Thread", auto_archive_duration=60)
         except Exception as e:
             logger.error(f"Failed to create thread: {e}")
             return # Do not continue if game thread doesn't exist
@@ -73,7 +71,7 @@ class Game:
             self.turn_completed.clear()
 
             logger.info(f"Game Turn Complete")
-            self.turn_action = None
+            self.current_action = None
 
             await self.advance_turn()
 
@@ -85,7 +83,7 @@ class Game:
 
         # Must coup if coins >= 10
         if self.current_player.coins >= 10:
-            self.turn_action = Coup(self.current_player)
+            self.current_action = Coup(self.current_player)
             await self.send_target_message(force_coup=True)
         else:
             await self.send_action_message()
@@ -111,7 +109,6 @@ class Game:
         logger.info("Ending Game")
         self.game_active = False
     
-
     # -----------------------
     # Utility Functions
     # -----------------------
@@ -121,10 +118,10 @@ class Game:
         return [p.user_id for p in self.players]
 
     def get_turn_order_ids(self):
-        """Return list of player IDs in turn order."""
+        """Return list of player IDs in turn order  ."""
         return [p.user_id for p in self.turn_order]
     
-    def get_player_by_id(self, user_id) -> Player:
+    def get_player_by_id(self, user_id: int) -> Player:
         """Returns Player Object given a user_id"""
         for player in self.players:
             if player.user_id == user_id:
@@ -143,7 +140,6 @@ class Game:
     
     async def send_update_msg(self, content: str):
         """Delete previous interactable message and send a log message in thread."""
-        logger.info(f"Update Message: {content}")
         if self.prev_msg:
             try:
                 await self.prev_msg.delete()
@@ -156,9 +152,10 @@ class Game:
         )
         await self.game_thread.send(embed=embed)
 
+        logger.info(f"Update Message Sent: {content}")
+
     async def send_interact_msg(self, view: discord.ui.View, embed: discord.Embed, response_msg: bool):
         """Send a message with an interactive view."""
-        logger.info(f"Interactable Message Sent")
         if self.prev_msg:
             try:
                 await self.prev_msg.delete()
@@ -168,6 +165,8 @@ class Game:
         msg = await self.game_thread.send(view=view, embed=embed)
         self.prev_msg = msg
 
+        logger.info(f"Interactable Message Sent")
+
         # Countdown updates for non-update messages
         if response_msg:
             timeout = 10 # time to respond
@@ -175,8 +174,11 @@ class Game:
 
     async def send_action_message(self):
         """Send dropdown for player action selection."""
+        logger.info("Creating Action Message.")
         view = create_action_view(self)
+        logger.info("Action View Created.")
         embed = create_action_embed(self)
+        logger.info("Action Embed Created.")
         await self.send_interact_msg(
             view=view,
             embed=embed,
@@ -185,8 +187,11 @@ class Game:
     
     async def send_response_message(self):
         """Create message with buttons to respond to an action"""
+        logger.info("Creating Response Message.")
         view = create_response_view(self)
+        logger.info("Response View Created.")
         embed = create_response_embed(self)
+        logger.info("Response Embed Created.")
 
         await self.send_interact_msg(
             view=view,
@@ -196,8 +201,12 @@ class Game:
 
     async def send_target_message(self, force_coup=False):
         """Send dropdown for target selection."""
+        logger.info("Creating Target Message.")
         view = create_target_view(self, force_coup=force_coup)
-        embed = create_action_embed(self)
+        logger.info("Target View Created.")
+        embed = create_target_embed(self)
+        logger.info("Target Embed Created.")
+
         await self.send_interact_msg(
             view=view,
             embed=embed,
@@ -209,7 +218,7 @@ class Game:
     # -----------------------
 
     async def check_alive(self, player: Player):
-        """Hanndle Player Death if Player Loses Influence"""
+        """Handle Player Death if Player Loses Influence"""
         if not player.is_alive():
             # Remove the dead player form the turn order
             if player == self.current_player:
@@ -222,83 +231,83 @@ class Game:
         return
 
     # -----------------------
-    # Challenge/Block Logic
+    # Turn Flow
     # -----------------------
 
     async def handle_challenge(self):
         """Handle Who wins the Challenge."""
-        action = self.turn_info.action
-        # Get the blocker and challenger Player Objects
-        blocker, challenger = None, None
-        for player in self.players:
-            if self.turn_info.blocker_id == player.user_id:
-                blocker = player
-            elif self.turn_info.challenger_id == player.user_id:
-                challenger = player
-        # Error Handling
-        if blocker == challenger:
-            logger.error("Challenger should not be blocker.")
-        if not blocker or not challenger:
-            logger.error("Blocker or Challenger not found.")
+        action = self.current_action
+        actor = action.actor
+        blocker = action.blocker
+        challenger = action.challenger
         
         logger.info(f"Handling Challenge: challenger={challenger}")
         
         # Case: Challenge is made on blocker
-        if self.turn_info.blocked == True:
+        if action.blocked == True:
             logger.info(f"Defending Challenge: blocker={blocker}")
             # If blocker does not have role they are blocking with
-            if not blocker.check_role(self.turn_info.blocking_role):
+            if not blocker.check_role(action.blocking_role):
+                logger.info("Defending Player does not have role.")
                 self.deck.return_revealed(blocker.lose_influence()) # Blocker loses influence
                 await self.check_alive(blocker)
-                await self.action_successful() # Carry out the action
+                await action.execute(self) # Carry out the action
             # If blocker has role
             else:
+                logger.info("Defending Player has role.")
                 self.deck.return_revealed(challenger.lose_influence()) # Challenger loses influence
-                self.deck.return_deck(blocker.lose_influence(self.turn_info.blocking_role)) # Blocker swaps associated role
+                self.deck.return_deck(blocker.lose_influence(action.blocking_role)) # Blocker swaps associated role
                 blocker.gain_influence(self.deck.draw())
                 await self.check_alive(challenger) # Check if challenger is alive
-                await self.blocked_action() # Action is Blocked Succesfully
+                await action.on_block(self)
         # Case: Challenge is made on actor
         else:
             logger.info(f"Defending Challenge: actor={self.current_player}")
-            role = Action.getRole[action]
-            # If actor does nto have role in hand
-            if not self.current_player.check_role(role):
-                self.deck.return_revealed(self.current_player.lose_influence()) # Actor loses influence
-                await self.check_alive(self.current_player)
-                await self.blocked_action() # Action is Challenged Succesfully (Effectively Blocked)
-            # If actor has role in hand
+            acting_role = action.role
+            # If actor does not have role they are blocking with
+            if not actor.check_role(acting_role):
+                logger.info("Defending Player does not have role.")
+                self.deck.return_revealed(actor.lose_influence()) # Actor loses influence
+                await self.check_alive(actor)
+                action.on_block()
+            # If actor has role
             else:
+                logger.info("Defending Player has role.")
                 self.deck.return_revealed(challenger.lose_influence()) # Challenger loses influence
-                self.deck.return_deck(self.current_player.lose_influence(role)) # Actor swaps acting role
-                self.current_player.gain_influence(self.deck.draw())
-                await self.check_alive(challenger) # Check if challenger is alive
-                await self.action_successful() # Proceed with action
+                self.deck.return_deck(actor.lose_influence(acting_role)) # Actor swaps out role
+                actor.gain_influence(self.deck.draw())
+                await self.check_alive(challenger)
+                await action.execute() # Carry out Action
 
-    async def handle_no_response(self):
-        """Handle no response to an action or block"""
-        if self.turn_info.blocked:
-            await self.blocked_action()
+
+
+    async def action_selected(self, action: Action):
+        """Handle the logic following an action being selected"""
+        self.current_action = action(self.current_player)
+        # Check if can afford the action. If not, prompt new selection.
+        if not self.current_action.is_valid():
+            await self.send_update_msg("Not enough coins to carry out that action. Choose again.")
+            self.current_action = None
+            await self.send_action_message()
+            return
+        
+        if self.current_action.has_target():
+            await self.send_target_message()
+        elif self.current_action.can_respond():
+            await self.send_response_message()
         else:
-            await self.action_successful()
+            await self.current_action.execute(self)
+        
+    async def target_selected(self):
+        """Handle the logic after target is selected"""
+        if self.current_action.can_respond():
+            await self.send_response_message()
+        else:
+            await self.current_action.execute(self)
 
-    async def blocked_action(self):
-        """Handle Blocked Action Successful."""
-        logger.info(f"Action {self.turn_info.action} by {self.current_player} was blocked")
-        await self.end_turn()
-
-    async def action_successful(self):
-        """Handle successful action (no block or challenge)"""
-        # TODO: call function associated with self.turn_info.action
-        action = self.turn_info.action
-        logger.info(f"Action {action} by {self.current_player} successful")
-        match action:
-            case "income": 
-                await self.take_income()
-            case "foreign_aid":
-                await self.collect_foreign_aid()
-            case "coup":
-                await self.coup()
-            case "tax":
-                await self.collect_tax()
-            # TODO: Map other actions to relevant functions
+    async def no_response(self):
+        """Handle no response to an action or block"""
+        if self.current_action.blocked:
+            await self.current_action.on_block(self)
+        else:
+            await self.current_action.execute(self)
