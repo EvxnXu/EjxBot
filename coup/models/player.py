@@ -56,11 +56,24 @@ class Player():
         self.coins += amount
         logger.info(f"{self} gained {amount} coin(s)")
     
-    def spend_coins(self, amount: int):
-        """Decrease player's coins by the specified amount"""
+    def spend_coins(self, amount: int) -> bool:
+        """Decrease player's coins by the specified amount. Returns False if Player cannot afford."""
         if amount > self.coins:
             logger.error(f"{self} does not have enough coins to spend {amount}")
-            return
+            return False
         self.coins -= amount
         logger.info(f"{self} spent {amount} coin(s)")
+        return True
     
+    def lose_coins(self, amount: int) -> int:
+        """Decreases player's coins by the specified amount to 0. Returns the max amount lost."""
+        lost = 0
+        if amount > self.coins:
+            lost = self.coins
+            self.coins = 0
+        else:
+            lost = amount
+            self.coins = self.coins - amount
+        logger.info(f"{self} lost up to {amount} coin(s)")
+        return lost
+        
