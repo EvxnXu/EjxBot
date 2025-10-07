@@ -1,8 +1,7 @@
 # coup.py
-import discord
 import logging
 from discord.ext import commands
-from coup.models import Lobby
+from .lobby import Lobby
 
 logger = logging.getLogger("coup")
 
