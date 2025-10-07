@@ -1,4 +1,4 @@
-# coup/models/action.py
+# action.py
 class Action:
     turnActions = ["income", "foreign_aid", "coup", "tax", "steal", "assassinate", "exchange"]
     roleActions = ["tax", "steal", "assassinate", "exchange"]

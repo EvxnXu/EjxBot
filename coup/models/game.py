@@ -1,11 +1,15 @@
+# game.py
 import asyncio
 import random
 import discord
+import logging
 from collections import deque
 from .player import Player
 from .deck import Deck
 from .action import Action
 from coup.views import create_action_view, create_target_view, create_response_view, create_action_embed, create_response_embed, update_response_timer
+
+logger = logging.getLogger("coup")
 
 class Game:
     """Model representing the state of an ongoing game."""
@@ -23,11 +27,12 @@ class Game:
         self.turn_info = Action()
         self.turn_completed = asyncio.Event() # To check for turn finish before advancing turn order
 
-
         # Deal 2 cards to each player
         for player in self.players:
             player.gain_influence(self.deck.draw())
             player.gain_influence(self.deck.draw())
+
+        # TODO: Tell players their cards
 
         # Randomize turn order
         if self.players:
@@ -35,7 +40,12 @@ class Game:
             self.turn_order = deque(randomized)
             self.current_player = self.turn_order.popleft()
         else:
-            raise ValueError("Game has no players.")
+            logger.error(f"No players in {self}")
+        
+        logger.info(f"Initialized Game: {self}")
+
+    def __repr__(self):
+        return f"<Game current_player={self.current_player} turn_info={self.turn_info} turn_order={self.get_turn_order_ids()} deck={self.deck}>"
 
         
     # -----------------------
@@ -48,7 +58,8 @@ class Game:
         try:
             self.game_thread = await msg.create_thread(name="Game Thread")
         except Exception as e:
-            print(f"Failed to create thread: {e}")
+            logger.error(f"Failed to create thread: {e}")
+            return # Do not continue if game thread doesn't exist
 
         # Notify players
         await self.ping_players()
@@ -60,15 +71,16 @@ class Game:
             await self.turn_completed.wait()
             self.turn_completed.clear()
 
-            print("turn complete!") # debug statement
+            logger.info(f"Game Turn Complete")
             self.turn_info = Action() # Reset Action State
 
             await self.advance_turn()
 
-            #TODO: return some result TBD
+        #TODO: return some result TBD
     
     async def take_turn(self):
         """Handle current player's turn."""
+        logger.info(f"Starting turn for {self.current_player}")
         # Must coup if coins >= 10
         if self.current_player.coins >= 10:
             self.turn_info.action = "coup"
@@ -83,7 +95,7 @@ class Game:
             await self.end_game()
             return
         # If current player isn't dead, add them to the end of the turn order
-        if self.current_player:
+        if self.current_player and self.current_player.is_alive():
             self.turn_order.append(self.current_player)
         # New active player is the front of the turn order.
         self.current_player = self.turn_order.popleft()
@@ -111,11 +123,12 @@ class Game:
     
     async def send_update_msg(self, content: str):
         """Delete previous interactable message and send a log message in thread."""
-        print("Printing update message: " + content) # debug statement
+        logger.info(f"Update Message: {content}")
         if self.prev_msg:
             try:
                 await self.prev_msg.delete()
             except:
+                logger.error("Previous Message Not Found")
                 pass
         self.prev_msg = None
         embed = discord.Embed(
@@ -125,15 +138,16 @@ class Game:
 
     async def send_interact_msg(self, view: discord.ui.View, embed: discord.Embed, response_msg: bool):
         """Send a message with an interactive view."""
+        logger.info(f"Interactable Message Sent")
         if self.prev_msg:
             try:
                 await self.prev_msg.delete()
             except:
+                logger.error("Previous Message Not Found")
                 pass
         msg = await self.game_thread.send(view=view, embed=embed)
         self.prev_msg = msg
 
-        
         # Countdown updates for non-update messages
         if response_msg:
             timeout = 10 # time to respond
@@ -176,7 +190,6 @@ class Game:
 
     async def take_income(self):
         """Active player takes income"""
-        print("Take Income")
         self.current_player.gain_income(1)
         await self.send_update_msg(
             content=f"{self.current_player.user_name} gained 1 coin, and now has {self.current_player.coins} coins."
@@ -203,10 +216,18 @@ class Game:
         """Active player coups target"""
         self.current_player.spend_coins(7)
         # Find target's Player object
-        for target in self.players:
-            if target.user_id == self.turn_info.target_id:
+        target = None
+        for player in self.players:
+            if player.user_id == self.turn_info.target_id:
                 # Target loses influence
-                self.deck.return_revealed(target.lose_influence())
+                target = player
+                break
+        # Handle Target not found
+        if not target:
+            logger.error(f"Target with id {self.turn_info.target_id} not found")
+            return
+        # If target found, they lose an influence
+        self.deck.return_revealed(target.lose_influence())
                 
         await self.end_turn()
     
@@ -229,7 +250,6 @@ class Game:
 
     async def handle_challenge(self):
         """Handle Who wins the Challenge."""
-        print("Handle Action Called!")
         action = self.turn_info.action
         # Get the blocker and challenger Player Objects
         blocker, challenger = None, None
@@ -240,45 +260,46 @@ class Game:
                 challenger = player
         # Error Handling
         if blocker == challenger:
-            raise AttributeError("Challenger should not be blocker.")
+            logger.error("Challenger should not be blocker.")
         if not blocker or not challenger:
-            raise AttributeError("Blocker or Challenger not found.")
+            logger.error("Blocker or Challenger not found.")
+        
+        logger.info(f"Handling Challenge: challenger={challenger}")
         
         # Case: Challenge is made on blocker
         if self.turn_info.blocked == True:
-            print("Challenge made on blocker!")
+            logger.info(f"Defending Challenge: blocker={blocker}")
             # If blocker does not have role they are blocking with
             if not blocker.check_role(self.turn_info.blocking_role):
-                print("Blocker does not have role")
                 self.deck.return_revealed(blocker.lose_influence()) # Blocker loses influence
-                self.check_alive(blocker)
-                self.action_successful() # Carry out the action
+                await self.check_alive(blocker)
+                await self.action_successful() # Carry out the action
             # If blocker has role
             else:
-                print("Blocker has role")
                 self.deck.return_revealed(challenger.lose_influence()) # Challenger loses influence
                 self.deck.return_deck(blocker.lose_influence(self.turn_info.blocking_role)) # Blocker swaps associated role
                 blocker.gain_influence(self.deck.draw())
-                self.check_alive(challenger) # Check if challenger is alive
-                self.blocked_action() # Action is Blocked Succesfully
+                await self.check_alive(challenger) # Check if challenger is alive
+                await self.blocked_action() # Action is Blocked Succesfully
         # Case: Challenge is made on actor
         else:
-            print("Challenge made on actor!")
+            logger.info(f"Defending Challenge: actor={self.current_player}")
             role = Action.getRole[action]
             # If actor does nto have role in hand
             if not self.current_player.check_role(role):
                 self.deck.return_revealed(self.current_player.lose_influence()) # Actor loses influence
-                self.check_alive(self.current_player)
-                self.blocked_action() # Action is Challenged Succesfully (Effectively Blocked)
+                await self.check_alive(self.current_player)
+                await self.blocked_action() # Action is Challenged Succesfully (Effectively Blocked)
             # If actor has role in hand
             else:
                 self.deck.return_revealed(challenger.lose_influence()) # Challenger loses influence
                 self.deck.return_deck(self.current_player.lose_influence(role)) # Actor swaps acting role
                 self.current_player.gain_influence(self.deck.draw())
-                self.check_alive(challenger) # Check if challenger is alive
-                self.action_successful() # Proceed with action
+                await self.check_alive(challenger) # Check if challenger is alive
+                await self.action_successful() # Proceed with action
 
     async def handle_no_response(self):
+        """Handle no response to an action or block"""
         if self.turn_info.blocked:
             await self.blocked_action()
         else:
@@ -286,13 +307,14 @@ class Game:
 
     async def blocked_action(self):
         """Handle Blocked Action Successful."""
+        logger.info(f"Action {self.turn_info.action} by {self.current_player} was blocked")
         await self.end_turn()
 
     async def action_successful(self):
         """Handle successful action (no block or challenge)"""
         # TODO: call function associated with self.turn_info.action
-        print("Action successful!")
         action = self.turn_info.action
+        logger.info(f"Action {action} by {self.current_player} successful")
         match action:
             case "income": 
                 await self.take_income()
@@ -311,9 +333,11 @@ class Game:
 
     async def end_turn(self):
         """Set the turn to done"""
+        logger.info(f"Ending turn for {self.current_player}")
         self.turn_completed.set()
 
     async def end_game(self):
         """Ends the current game."""
+        logger.info("Ending Game")
         self.game_active = False
     
