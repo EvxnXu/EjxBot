@@ -19,11 +19,13 @@ def setup_logger(name):
     handler.suffix="%Y-%m-%d"
 
     formatter = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(messages)s"
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
     handler.setFormatter(formatter)
 
     logger = logging.getLogger(name)
+    logger.addHandler(handler)
+    logger.propagate = False
     logger.setLevel(logging.INFO)
 
     return logger
