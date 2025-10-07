@@ -1,12 +1,15 @@
+# lobby.py
 import asyncio
+import logging
 from discord.ext import commands
 from coup.views import create_lobby_view, create_lobby_embed
 from .game import Game
 
+logger = logging.getLogger("coup")
+
 class Lobby:
     """Model representing the state of a game lobby."""
     def __init__(self, lobby_id: int, ctx: commands.Context):
-        print("Lobby init")
         self.lobby_id = lobby_id
         self.players = {} # user_id -> user_name
         self.game = None # Game State Object
@@ -14,8 +17,14 @@ class Lobby:
 
         # Add initial member and send lobby message
         self.add_player(ctx.author)
+        
+        logger.info(f"Lobby Created: {self}")
+    
+    def __repr__(self):
+        return f"<Lobby #{self.lobby_id}: players={list(self.players.values())} active_game={self.game is not None} >"
     
     async def run(self, ctx):
+        """Loop for Lobby Function"""
         # Put in first update message
         await self.update_message(ctx)
 
@@ -39,23 +48,28 @@ class Lobby:
             view = create_lobby_view(self, ctx)
         else:
             view = None
-        embed = create_lobby_embed(self.players) #TODO: Add lobby id to lobby embed
+        embed = create_lobby_embed(self.players) # TODO: Add lobby id to lobby embed
 
         # delete the previous lobby message if it exists
         if self.prev_msg:
             try:
                 await self.prev_msg.delete()
             except:
+                logger.warning(f"{self} could not delete the previous lobby message")
                 pass 
 
         # Send new message and save reference as previous message
         self.prev_msg = await ctx.send(embed=embed, view=view)
     
     def add_player(self, user):
+        """Add player to lobby"""
         self.players[user.id] = user.name
+        logger.info(f"{self} had added {user.id}: {user.name}")
 
     def remove_player(self, user):
+        """Remove player from lobby"""
         self.players.pop(user.id, None)
+        logger.info(f"{self} had removed {user.id}: {user.name}")
     
     def is_full(self):
         return len(self.players) >= 6
@@ -69,5 +83,5 @@ class Lobby:
     def create_game(self):
         """Initialize game instance"""
         if not self.can_start():
-            raise ValueError("Not correct # of players to start.")
+            logger.error(f"{self} cannot start the game. Not the correct number of players")
         self.game = Game(self.players)
