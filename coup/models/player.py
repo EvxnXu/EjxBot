@@ -44,7 +44,6 @@ class Player():
             logger.info(f"{self} lost their last influence: {lost_card}")
             return lost_card
 
-    
     def gain_influence(self, card: str):
         """Adds a card to the player's hand (user exchanges or challenge win)"""
         if len(self.hand) >= 2:
