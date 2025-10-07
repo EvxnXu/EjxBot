@@ -233,24 +233,29 @@ class Game:
         action = self.turn_info.action
         # Get the blocker and challenger Player Objects
         blocker, challenger = None, None
-        for player in self.players():
-            if self.turn_info.blocker_id == player.id:
+        for player in self.players:
+            if self.turn_info.blocker_id == player.user_id:
                 blocker = player
-            elif self.turn_info.challenger_id == player.id:
+            elif self.turn_info.challenger_id == player.user_id:
                 challenger = player
         # Error Handling
+        if blocker == challenger:
+            raise AttributeError("Challenger should not be blocker.")
         if not blocker or not challenger:
             raise AttributeError("Blocker or Challenger not found.")
         
         # Case: Challenge is made on blocker
         if self.turn_info.blocked == True:
+            print("Challenge made on blocker!")
             # If blocker does not have role they are blocking with
             if not blocker.check_role(self.turn_info.blocking_role):
+                print("Blocker does not have role")
                 self.deck.return_revealed(blocker.lose_influence()) # Blocker loses influence
                 self.check_alive(blocker)
                 self.action_successful() # Carry out the action
             # If blocker has role
             else:
+                print("Blocker has role")
                 self.deck.return_revealed(challenger.lose_influence()) # Challenger loses influence
                 self.deck.return_deck(blocker.lose_influence(self.turn_info.blocking_role)) # Blocker swaps associated role
                 blocker.gain_influence(self.deck.draw())
@@ -258,7 +263,8 @@ class Game:
                 self.blocked_action() # Action is Blocked Succesfully
         # Case: Challenge is made on actor
         else:
-            role = Action.getRole[self.turn_info.action]
+            print("Challenge made on actor!")
+            role = Action.getRole[action]
             # If actor does nto have role in hand
             if not self.current_player.check_role(role):
                 self.deck.return_revealed(self.current_player.lose_influence()) # Actor loses influence
@@ -285,6 +291,7 @@ class Game:
     async def action_successful(self):
         """Handle successful action (no block or challenge)"""
         # TODO: call function associated with self.turn_info.action
+        print("Action successful!")
         action = self.turn_info.action
         match action:
             case "income": 
