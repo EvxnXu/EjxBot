@@ -218,7 +218,7 @@ def challenge_bt(game):
                 return
         # Case: Challenging a Block
         else:
-            if user.id == game.turn_info.blocker_id or user.id not in game.get_player_ids:
+            if user.id == game.turn_info.blocker_id or user.id not in game.get_player_ids():
                 await interaction.response.send_message("You cannot challenge!", ephemeral=True)
                 return
         # Update Turn Info
@@ -232,7 +232,7 @@ def challenge_bt(game):
             await game.send_update_msg(f"{user.name} has challenged the role block!")
         await interaction.response.defer()
         # Handle the Challenge
-        game.handle_challenge()
+        await game.handle_challenge()
 
     button.callback = callback
     return button
