@@ -4,9 +4,9 @@ import random
 import discord
 import logging
 from collections import deque
-from .player import Player
-from .deck import Deck
-from .action import Action
+from models.player import Player
+from models.deck import Deck
+from models.action import Action, Coup
 from coup.views import create_action_view, create_target_view, create_response_view, create_action_embed, create_response_embed, update_response_timer
 
 logger = logging.getLogger("coup")
@@ -16,15 +16,17 @@ class Game:
     def __init__(self, players: dict):
         # Create Player objects from the input mapping
         self.players = [Player(user_id, user_name) for user_id, user_name in players.items()]
+        self.dead: list[Player] = []
+        # Create Deck
         self.deck = Deck()
-        self.dead_players: list[Player] = []
+        # Game Metadata
         self.game_active = True
-
         self.game_thread: discord.Thread | None = None
         self.prev_msg: discord.Message | None = None
-
-        self.current_player = None
-        self.turn_info = Action()
+        # Turn Data
+        self.turn_order = deque()
+        self.current_player: Player | None = None
+        self.turn_action = None
         self.turn_completed = asyncio.Event() # To check for turn finish before advancing turn order
 
         # Deal 2 cards to each player
@@ -35,21 +37,21 @@ class Game:
         # TODO: Tell players their cards
 
         # Randomize turn order
-        if self.players:
-            randomized = random.sample(self.players, k=len(self.players))
-            self.turn_order = deque(randomized)
-            self.current_player = self.turn_order.popleft()
-        else:
-            logger.error(f"No players in {self}")
-        
+        randomized = random.sample(self.players, k=len(self.players))
+        self.turn_order = deque(randomized)
+        self.current_player = self.turn_order.popleft()
+        # Log Game Init
         logger.info(f"Initialized Game: {self}")
 
     def __repr__(self):
-        return f"<Game current_player={self.current_player} turn_info={self.turn_info} turn_order={self.get_turn_order_ids()} deck={self.deck}>"
-
+        return (
+            f"<Game current_player={self.current_player} "
+            f"turn_info={self.turn_info} "
+            f"turn_order={self.get_turn_order_ids()} deck={self.deck}>"
+        )
         
     # -----------------------
-    # Game Functions
+    # Game Flow
     # -----------------------
 
     async def game_loop(self, msg: discord.Message):
@@ -61,18 +63,17 @@ class Game:
             logger.error(f"Failed to create thread: {e}")
             return # Do not continue if game thread doesn't exist
 
-        # Notify players
         await self.ping_players()
 
         while self.game_active:
             await self.take_turn()
 
-            # wait until turn is complete
+            # Wait until Active Player Finishes Taking Turn
             await self.turn_completed.wait()
             self.turn_completed.clear()
 
             logger.info(f"Game Turn Complete")
-            self.turn_info = Action() # Reset Action State
+            self.turn_action = None
 
             await self.advance_turn()
 
@@ -81,9 +82,10 @@ class Game:
     async def take_turn(self):
         """Handle current player's turn."""
         logger.info(f"Starting turn for {self.current_player}")
+
         # Must coup if coins >= 10
         if self.current_player.coins >= 10:
-            self.turn_info.action = "coup"
+            self.turn_action = Coup(self.current_player)
             await self.send_target_message(force_coup=True)
         else:
             await self.send_action_message()
@@ -94,20 +96,25 @@ class Game:
         if not self.turn_order:
             await self.end_game()
             return
+        
         # If current player isn't dead, add them to the end of the turn order
         if self.current_player and self.current_player.is_alive():
             self.turn_order.append(self.current_player)
         # New active player is the front of the turn order.
         self.current_player = self.turn_order.popleft()
+    
+    async def end_turn(self):
+        logger.info(f"Ending turn for {self.current_player}")
+        self.turn_completed.set()
+
+    async def end_game(self):
+        logger.info("Ending Game")
+        self.game_active = False
+    
 
     # -----------------------
-    # Misc.
+    # Utility Functions
     # -----------------------
-
-    async def ping_players(self):
-        """Ping all players at start of game to invite them to game thread."""
-        mentions = " ".join([f"<@{p.user_id}>" for p in self.players])
-        await self.game_thread.send(mentions + " The game has begun!")
 
     def get_player_ids(self):
         """Return list of player IDs in game"""
@@ -117,6 +124,19 @@ class Game:
         """Return list of player IDs in turn order."""
         return [p.user_id for p in self.turn_order]
     
+    def get_player_by_id(self, user_id) -> Player:
+        """Returns Player Object given a user_id"""
+        for player in self.players:
+            if player.user_id == user_id:
+                return player
+        logger.error(f"Player with id {user_id} not found in list of living players")
+        return None
+    
+    async def ping_players(self):
+        """Ping all players at start of game to invite them to game thread."""
+        mentions = " ".join([f"<@{p.user_id}>" for p in self.players])
+        await self.game_thread.send(mentions + " The game has begun!")
+
     # -----------------------
     # Message Handling
     # -----------------------
@@ -188,49 +208,6 @@ class Game:
     # Successful Actions
     # -----------------------
 
-    async def take_income(self):
-        """Active player takes income"""
-        self.current_player.gain_income(1)
-        await self.send_update_msg(
-            content=f"{self.current_player.user_name} gained 1 coin, and now has {self.current_player.coins} coins."
-        )
-        await self.end_turn()
-    
-    async def collect_foreign_aid(self):
-        """Active player takes foreign aid"""
-        self.current_player.gain_income(2)
-        await self.send_update_msg(
-            content=f"{self.current_player.user_name} gained 2 coins, and now has {self.current_player.coins} coins."
-        )
-        await self.end_turn()
-    
-    async def collect_tax(self):
-        """Active player collects tax"""
-        self.current_player.gain_income(3)
-        await self.send_update_msg(
-           content=f"{self.current_player.user_name} gained 3 coins, and now has {self.current_player.coins} coins."
-        )
-        await self.end_turn()
-    
-    async def coup(self):
-        """Active player coups target"""
-        self.current_player.spend_coins(7)
-        # Find target's Player object
-        target = None
-        for player in self.players:
-            if player.user_id == self.turn_info.target_id:
-                # Target loses influence
-                target = player
-                break
-        # Handle Target not found
-        if not target:
-            logger.error(f"Target with id {self.turn_info.target_id} not found")
-            return
-        # If target found, they lose an influence
-        self.deck.return_revealed(target.lose_influence())
-                
-        await self.end_turn()
-    
     async def check_alive(self, player: Player):
         """Hanndle Player Death if Player Loses Influence"""
         if not player.is_alive():
@@ -239,9 +216,9 @@ class Game:
                 self.current_player = None
             else:
                 self.turn_order.remove(player)
-            # Move from players to dead_players
+            # Move from players to dead
             self.players.remove(player)
-            self.dead_players.append(player)
+            self.dead.append(player)
         return
 
     # -----------------------
@@ -325,19 +302,3 @@ class Game:
             case "tax":
                 await self.collect_tax()
             # TODO: Map other actions to relevant functions
-
-    
-    # -----------------------
-    # State Update Functions
-    # -----------------------
-
-    async def end_turn(self):
-        """Set the turn to done"""
-        logger.info(f"Ending turn for {self.current_player}")
-        self.turn_completed.set()
-
-    async def end_game(self):
-        """Ends the current game."""
-        logger.info("Ending Game")
-        self.game_active = False
-    
