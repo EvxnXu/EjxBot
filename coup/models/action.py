@@ -33,8 +33,8 @@ class Action(ABC):
         logger.error("Base Class Method Called")
         
     async def on_block(self, game):
-        logger.error("Base Class Method Called")
-        pass
+        # Default Behavior: Action doesn't go through, end turn
+        game.end_turn()
 
     def is_valid(self) -> bool:
         return True
