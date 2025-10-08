@@ -25,12 +25,13 @@ class Player():
         """Checks if Player has the passed role."""
         return role in self.hand
 
-    def lose_influence(self, card: Optional[str]) -> str:
+    def lose_influence(self, card: Optional[str] = None) -> str:
         """Handles the player losing an influence (card)"""
+        logger.info(f"{self} is losing influence.")
         if not self.is_alive():
             logger.error(f"{self} is already dead; cannot lose influence.")
             return None
-        
+    
         if len(self.hand) == 2:
             if card and card in self.hand:
                 self.hand.remove(card)
@@ -38,6 +39,7 @@ class Player():
                 return card
             else:
                 print("Player has 2 cards, needs to choose one to lose.")
+                return
                 # TODO: Implement logic for providing the user a message + view with buttons to choose card
         elif len(self.hand) == 1:
             lost_card = self.hand.pop()
