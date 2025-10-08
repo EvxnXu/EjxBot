@@ -9,6 +9,7 @@ logger = logging.getLogger("coup")
 class Action(ABC):
     """Base class for all game actions"""
     name: str = "base"
+    role: str = "base"
 
     def __init__(self, actor: Player, target: Optional[Player] = None):
         self.actor = actor
@@ -76,6 +77,7 @@ class Foreign_Aid(Action):
 
 class Tax(Action):
     name = "tax"
+    role = "Duke"
 
     async def execute(self, game):
         self.actor.gain_income(3)
@@ -105,6 +107,7 @@ class Coup(Action):
 
 class Exchange(Action):
     name = "exchange"
+    role = "Ambassador"
 
     async def execute(self, game):
         game.deck.return_deck(self.actor.lose_influence()) # Lose actor's choice of influence
@@ -112,6 +115,7 @@ class Exchange(Action):
 
 class Assassinate(Action):
     name = "assassinate"
+    role = "Assassin"
 
     async def execute(self, game):
         game.deck.return_revealed(self.target.lose_influence()) # Target Loses Influence
@@ -135,6 +139,7 @@ class Assassinate(Action):
 
 class Steal(Action):
     name = "steal"
+    role = "Captain"
 
     async def execute(self, game):
         self.target.lose_coins(2) # Target loses 2 coins
