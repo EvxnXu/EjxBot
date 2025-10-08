@@ -32,7 +32,7 @@ class Action(ABC):
     async def execute(self, game):
         logger.error("Base Class Method Called")
         
-    async def on_block(self, game, blocker):
+    async def on_block(self, game):
         logger.error("Base Class Method Called")
         pass
 
@@ -44,6 +44,9 @@ class Action(ABC):
     
     def can_respond(self) -> bool:
         return True
+    
+    def blockable(self) -> bool:
+        return False
     
 class Income(Action):
     name = "income"
@@ -67,6 +70,9 @@ class Foreign_Aid(Action):
             content=f"{self.actor.user_name} gained 2 coins. They now have {self.actor.coins} coin(s)."
         )
         await game.end_turn()
+    
+    def blockable(self):
+        return True
 
 class Tax(Action):
     name = "tax"
@@ -123,6 +129,9 @@ class Assassinate(Action):
     
     def has_target(self):
         return True
+    
+    def blockable(self):
+        return True
 
 class Steal(Action):
     name = "steal"
@@ -134,6 +143,9 @@ class Steal(Action):
         await game.end_turn()
 
     def has_target(self):
+        return True
+    
+    def blockable(self):
         return True
 
 
