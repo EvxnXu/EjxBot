@@ -35,7 +35,7 @@ class Action(ABC):
         
     async def on_block(self, game):
         # Default Behavior: Action doesn't go through, end turn
-        game.end_turn()
+        await game.end_turn()
 
     def is_valid(self) -> bool:
         return True
