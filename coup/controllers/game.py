@@ -5,7 +5,12 @@ import discord
 import logging
 from collections import deque
 from coup.models import Player, Deck, Action, Coup
-from coup.views import create_action_view, create_target_view, create_response_view, create_action_embed, create_response_embed, create_target_embed, update_response_timer
+from coup.views import (
+    create_action_view, create_target_view, 
+    create_response_view, create_action_embed, 
+    create_response_embed, create_target_embed, update_response_timer, 
+    create_prompt_view, create_prompt_embed
+    )
 
 logger = logging.getLogger("coup")
 
@@ -212,23 +217,6 @@ class Game:
             embed=embed,
             response_msg=False
         )
-    
-    # -----------------------
-    # Successful Actions
-    # -----------------------
-
-    async def check_alive(self, player: Player):
-        """Handle Player Death if Player Loses Influence"""
-        if not player.is_alive():
-            # Remove the dead player form the turn order
-            if player == self.current_player:
-                self.current_player = None
-            else:
-                self.turn_order.remove(player)
-            # Move from players to dead
-            self.players.remove(player)
-            self.dead.append(player)
-        return
 
     # -----------------------
     # Turn Flow
@@ -249,16 +237,23 @@ class Game:
             # If blocker does not have role they are blocking with
             if not blocker.check_role(action.blocking_role):
                 logger.info("Defending Player does not have role.")
-                self.deck.return_revealed(blocker.lose_influence()) # Blocker loses influence
+                # Blocker loses influence, return to revealed pile
+                await self.handle_lose_influence(blocker)
+                # Check if Blocker is Alive
                 await self.check_alive(blocker)
-                await action.execute(self) # Carry out the action
+                # Carry out action (Block Failed)
+                await action.execute(self)
             # If blocker has role
             else:
                 logger.info("Defending Player has role.")
-                self.deck.return_revealed(challenger.lose_influence()) # Challenger loses influence
-                self.deck.return_deck(blocker.lose_influence(action.blocking_role)) # Blocker swaps associated role
+                # Challenger Loses Influence
+                await self.handle_lose_influence(challenger)
+                # Blocker Exchanges Challenged Role
+                await self.handle_lose_influence(blocker, True)
                 blocker.gain_influence(self.deck.draw())
-                await self.check_alive(challenger) # Check if challenger is alive
+                # Check if Challenger is Alive
+                await self.check_alive(challenger)
+                # Action is Blocked
                 await action.on_block(self)
         # Case: Challenge is made on actor
         else:
@@ -267,19 +262,24 @@ class Game:
             # If actor does not have role they are blocking with
             if not actor.check_role(acting_role):
                 logger.info("Defending Player does not have role.")
-                self.deck.return_revealed(actor.lose_influence()) # Actor loses influence
+                # Actor Loses Influence
+                await self.handle_lose_influence(actor)
+                # Check if Actor is Alive
                 await self.check_alive(actor)
+                # Action is Blocked
                 action.on_block()
             # If actor has role
             else:
                 logger.info("Defending Player has role.")
-                self.deck.return_revealed(challenger.lose_influence()) # Challenger loses influence
-                self.deck.return_deck(actor.lose_influence(acting_role)) # Actor swaps out role
+                # Challenger Loses Influence
+                await self.handle_lose_influence(challenger)
+                # Actor Exchanges Challenged Role
+                await self.handle_lose_influence(actor, True)
                 actor.gain_influence(self.deck.draw())
+                # Check if Challenger is Alive
                 await self.check_alive(challenger)
-                await action.execute() # Carry out Action
-
-
+                # Carry out Action
+                await action.execute()
 
     async def action_selected(self, action: Action):
         """Handle the logic following an action being selected"""
@@ -311,3 +311,45 @@ class Game:
             await self.current_action.on_block(self)
         else:
             await self.current_action.execute(self)
+
+    async def check_alive(self, player: Player):
+        """Handle Player Death if Player Loses Influence"""
+        if not player.is_alive():
+            # Remove the dead player form the turn order
+            if player == self.current_player:
+                self.current_player = None
+            else:
+                self.turn_order.remove(player)
+            # Move from players to dead
+            self.players.remove(player)
+            self.dead.append(player)
+        return
+    
+    async def handle_lose_influence(self, player: Player, exchange: bool = False):
+        """Handle Logic for Player Losing Influence."""
+        logger.info(f"Handling {player} losing influence")
+        card_choice = None
+        # Obtain the Card Player is Losing
+        if player.num_influence() >= 2:
+            logger.info(f"Player has {player.num_influence()} cards. Must Choose one.")
+            # Must allow player to choose which to lose.
+            future = asyncio.get_event_loop().create_future()
+            msg = await self.game_thread.send(
+                view = create_prompt_view(target=player, future=future),
+                embed = create_prompt_embed(target=player))
+            card_choice = await future
+            await msg.delete()
+            return player.lose_influence(card_choice)
+        else:
+            # No need to get card choice
+            card_choice = player.lose_influence()
+        # Return Card to Deck
+        if exchange:
+            # Return to Deck, do not tell players the card's identity
+            self.deck.return_deck(card_choice)
+        else:
+            # Return to Revealed Pile, send update message with card's identity
+            self.deck.return_revealed(card_choice)
+            await self.send_update_msg(
+                f"{player.user_name} has lost influence: {card_choice}"
+            )

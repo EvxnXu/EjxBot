@@ -90,7 +90,9 @@ class Coup(Action):
     name = "coup"
 
     async def execute(self, game):
-        game.deck.return_revealed(self.target.lose_influence()) # Target Loses Influence
+        # Target Loses Influence
+        lost_card = await game.handle_lose_influence(self.target)
+        game.deck.return_revealed(lost_card)
         self.actor.spend_coins(7) # Actor spends 7 coins
         await game.end_turn()
 
@@ -110,15 +112,21 @@ class Exchange(Action):
     role = "Ambassador"
 
     async def execute(self, game):
-        game.deck.return_deck(self.actor.lose_influence()) # Lose actor's choice of influence
-        self.actor.gain_influence(game.deck.draw()) # Draw a new role card
+        # Draw a New Role Card from the Deck
+        self.actor.gain_influence(game.deck.draw())
+        # Return a Choice of Role Card to the Deck
+        returned_card = await game.handle_lose_influence(self.actor)
+        game.deck.return_deck(returned_card)
+        await game.end_turn()
 
 class Assassinate(Action):
     name = "assassinate"
     role = "Assassin"
 
     async def execute(self, game):
-        game.deck.return_revealed(self.target.lose_influence()) # Target Loses Influence
+        # Target Loses Influence
+        lost_card = await game.handle_lose_influence(self.target)
+        game.deck.return_revealed(lost_card)
         self.actor.spend_coins(3) # Actor spends 3 coins
         await game.end_turn()
 
