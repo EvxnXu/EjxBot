@@ -24,32 +24,33 @@ class Player():
     def check_role(self, role: str) -> bool:
         """Checks if Player has the passed role."""
         return role in self.hand
+    
+    def num_influence(self) -> int:
+        """Checks the number of influence a player has."""
+        return len(self.hand)
 
     def lose_influence(self, card: Optional[str] = None) -> str:
         """Handles the player losing an influence (card)"""
         logger.info(f"{self} is losing influence.")
-        if not self.is_alive():
-            logger.error(f"{self} is already dead; cannot lose influence.")
-            return None
     
-        if len(self.hand) == 2:
+        if len(self.hand) >= 2:
             if card and card in self.hand:
                 self.hand.remove(card)
                 logger.info(f"{self} lost influence: {card}")
                 return card
             else:
-                print("Player has 2 cards, needs to choose one to lose.")
-                return
-                # TODO: Implement logic for providing the user a message + view with buttons to choose card
+                logger.error("Player has >1 influence, must be provided card to remove as argument.")
         elif len(self.hand) == 1:
             lost_card = self.hand.pop()
             logger.info(f"{self} lost their last influence: {lost_card}")
             return lost_card
+        else:
+            logger.error(f"{self} is already dead; Cannot lose influence.")
+
+        return None
 
     def gain_influence(self, card: str):
         """Adds a card to the player's hand (user exchanges or challenge win)"""
-        if len(self.hand) >= 2:
-            logger.error(f"{self} cannot have more than 2 influence.")
         self.hand.append(card)
         logger.info(f"{self} gained influence: {card}")
         

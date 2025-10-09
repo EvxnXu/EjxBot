@@ -13,6 +13,86 @@ logger = logging.getLogger("coup")
 
 def create_action_view(game):
     """Create and return a Discord UI View allowing current player to choose an action for their turn"""
+    view = View(timeout=None)
+    view.add_item(create_action_select(game, view))
+    return view
+
+def create_target_view(game, force_coup=False):
+    """Create dropdown select for a targeted action."""
+    view = View(timeout=None)
+    view.add_item(create_target_select(game, view))
+    return view
+
+def create_response_view(game):
+    """Creates a view for a message responding to an action"""
+    view = View(timeout=None)
+    action: Action = game.current_action
+
+    if not action:
+        logger.error("No action found.")
+        return
+
+    # Only add block buttons if not already blocked
+    if action.blocked == False and action.blockable():
+        view.add_item(create_block_button(game))
+        logger.info("Adding Block Button to Response Message.")
+
+    # Only add challenge button if action is blockable or action has been role blocked
+    if isinstance(action, (Tax, Assassinate, Exchange, Steal)) or action.blocked:
+        view.add_item(create_challenge_button(game))
+        logger.info("Adding Challenge Button to Response Message.")
+    
+    return view
+
+def create_prompt_view(target, future):
+    """Creates a prompt button to choose influence to lose"""
+    view = View(timeout=None)
+    view.add_item(create_prompt_button(target, future))
+    return view
+
+# -----------------------
+# Embeds
+# -----------------------
+
+def create_action_embed(game):
+    embed = discord.Embed(
+        title=f"It is {game.current_player.user_name}'s turn.",
+        description="Please choose an action for your turn"
+    )
+    return embed
+
+def create_response_embed(game):
+    # Build title depending on whether the action has a target and a response is occuring
+    # TODO: Clean up the title
+    embed = discord.Embed(
+        description="If you would like to respond to this action, choose a response."
+    )
+
+    return embed
+
+def create_target_embed(game):
+    embed = discord.Embed(
+        title=f"{game.current_player.user_name}, please choose a target for {game.current_action.name}:"
+    )
+    return embed
+
+def create_prompt_embed(target):
+    embed = discord.Embed(
+        title=f"{target.user_name}: Please choose an influence card to lsoe."
+    )
+    return embed
+
+def create_influence_select_embed():
+    embed = discord.Embed(
+        title="Please choose your choice of role to lose."
+    )
+    return embed
+
+# ----------------------
+# Select Menus
+# ----------------------
+
+def create_action_select(game, view):
     actions = [Income, Foreign_Aid, Coup, Tax, Exchange, Assassinate, Steal]
     options = [discord.SelectOption(label=a.name, value=a.name) for a in actions]
     mapping = {a.name: a for a in actions}
@@ -36,12 +116,9 @@ def create_action_view(game):
         await game.action_selected(action_class)
 
     select.callback = callback
-    view = View(timeout=None)
-    view.add_item(select)
-    return view
+    return select
 
-def create_target_view(game, force_coup=False):
-    """Create dropdown select for a targeted action."""
+def create_target_select(game, view):
     current_player = game.current_player
     targets = [p for p in game.players if p.user_id != current_player.user_id]
 
@@ -69,7 +146,9 @@ def create_target_view(game, force_coup=False):
         user = interaction.user
 
         if user.id != game.current_player.user_id:
-            await interaction.response.send_message("It is not your turn!", ephemeral=True)
+            await interaction.response.send_message(
+                "It is not your turn!", ephemeral=True
+            )
             return
 
         target_id = int(select.values[0])
@@ -88,56 +167,32 @@ def create_target_view(game, force_coup=False):
         await game.target_selected()
 
     select.callback = callback
-    view = View(timeout=None)
-    view.add_item(select)
-    return view
+    return select
 
-def create_response_view(game):
-    """Creates a view for a message responding to an action"""
-    view = View(timeout=None)
-    action: Action = game.current_action
+def create_influence_select(player, future):
+    cards = [card for card in player.hand]
 
-    if not action:
-        logger.error("No action found.")
-        return
+    options = [
+        discord.SelectOption(
+            label=card,
+            value=card
+        )
+        for card in cards
+    ]
 
-    # Only add block buttons if not already blocked
-    if action.blocked == False and action.blockable():
-        logger.info("Adding Block Button to Response Message.")
-        view.add_item(create_block_button(game))
-
-    if isinstance(action, (Tax, Assassinate, Exchange, Steal)) or action.blocked:
-        view.add_item(create_challenge_button(game))
-        logger.info("Adding Challenge Button to Response Message.")
-    
-    return view
-
-# -----------------------
-# Embeds
-# -----------------------
-
-def create_action_embed(game):
-    embed = discord.Embed(
-        title=f"It is {game.current_player.user_name}'s turn.",
-        description="Please choose an action for your turn"
-    )
-    return embed
-
-def create_response_embed(game):
-    # Build title depending on whether the action has a target and a response is occuring
-    # TODO: Clean up the title
-    embed = discord.Embed(
-        description="If you would like to respond to this action, choose a response."
+    select = Select(
+        placeholder="Choose role to lose...",
+        options=options,
+        min_values=1,
+        max_values=1
     )
 
-    return embed
+    async def callback(interaction: discord.Interaction):
+        selection = select.values[0]
+        future.set_result(selection)
 
-def create_target_embed(game):
-    embed = discord.Embed(
-        title=f"{game.current_player.user_id}, please choose a target for {game.current_action.name}:"
-    )
-    return embed
-
+    select.callback = callback
+    return select
 # -----------------------
 # Buttons
 # -----------------------
@@ -152,7 +207,10 @@ def create_block_button(game):
 
         # Validate that the user can block
         if user.id == action.actor.user_id or user.id not in game.get_turn_order_ids():
-            await interaction.response.send_message("You cannot block!", ephemeral=True)
+            await interaction.response.send_message(
+                "You cannot block!", 
+                ephemeral=True
+            )
             return
         
         # Update Action
@@ -176,12 +234,18 @@ def create_challenge_button(game):
         if action.blocked:
             # Challenging the block
             if user.id == action.blocker.user_id or user.id not in game.get_player_ids():
-                await interaction.response.send_message("You cannot challenge this block!", ephemeral=True)
+                await interaction.response.send_message(
+                    "You cannot challenge this block!", 
+                    ephemeral=True
+                )
                 return
         else:
             # Challenging the Action
             if user.id not in game.get_turn_order_ids() or user.id == action.actor.user_id:
-                await interaction.response.send_message("You cannot challenge this action!", ephemeral=True)
+                await interaction.response.send_message(
+                    "You cannot challenge this action!", 
+                    ephemeral=True
+                )
                 return
 
         # Update Action object
@@ -196,6 +260,29 @@ def create_challenge_button(game):
         await interaction.response.defer()
         # Handle the Challenge
         await game.handle_challenge()
+
+    button.callback = callback
+    return button
+
+def create_prompt_button(target, future):
+    button = Button(label="Choose", style=discord.ButtonStyle.danger)
+
+    async def callback(interaction: discord.Interaction):
+        user = interaction.user
+        # Validate user
+        if user.id != target.user_id:
+            await interaction.response.send_message(
+                "You are not the player losing influence!",
+                ephemeral=True
+            )
+        else:
+            view = View(timeout=None)
+            view.add_item(create_influence_select(target, future))
+            await interaction.response.send_message(
+                view=view,
+                embed=create_influence_select_embed(),
+                ephemeral=True
+            )
 
     button.callback = callback
     return button
