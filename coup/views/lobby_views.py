@@ -1,18 +1,15 @@
 # coup_views.py
-from discord.ui import Button, View
 import discord
+from discord.ui import Button, View
 
-def create_lobby_view(coup_cog, lobby, ctx):
+
+def create_lobby_view(lobby, ctx):
     """
     Create the lobby view with buttons for join/leave/start game buttons.
-    
-    Args:
-        coup_cog: The instnace of the coup cog to call functions
-        ctx: Discord context to pass to functions
     """
     view = View(timeout=None)  # Add timeout=None to prevent expiration
-    view.add_item(join_bt(coup_cog, lobby, ctx))
-    view.add_item(leave_bt(coup_cog, lobby, ctx))
+    view.add_item(join_bt(lobby, ctx))
+    view.add_item(leave_bt(lobby, ctx))
     view.add_item(start_bt(lobby, ctx))
 
     return view
@@ -51,7 +48,7 @@ def create_lobby_embed(players: dict):
 # Buttons
 # --------------------
 
-def join_bt(coup_cog, lobby, ctx):
+def join_bt(lobby, ctx):
     """Create the Join Game button"""
     button = Button(label="Join Game", style=discord.ButtonStyle.primary)
 
@@ -76,12 +73,12 @@ def join_bt(coup_cog, lobby, ctx):
         # Add player
         lobby.add_player(user)
         await interaction.response.defer()  # Acknowledge the interaction
-        await coup_cog.update_lobby_message(lobby, ctx)
+        await lobby.update_message(ctx)
 
     button.callback = callback
     return button
 
-def leave_bt(coup_cog, lobby, ctx):
+def leave_bt(lobby, ctx):
     """Create the Leave Game button"""
     button = Button(label="Leave Game", style=discord.ButtonStyle.red)
 
@@ -105,7 +102,7 @@ def leave_bt(coup_cog, lobby, ctx):
         # Remove player
         lobby.remove_player(user)
         await interaction.response.defer()  # Acknowledge the interaction
-        await coup_cog.update_lobby_message(lobby, ctx)
+        await lobby.update_message(ctx)
 
     button.callback = callback
     return button
@@ -137,9 +134,8 @@ def start_bt(lobby, ctx):
                 ephemeral=True
             )
             return
-        lobby.start_game()
-        await interaction.response.defer()
-        await ctx.send(f"Game started in lobby {lobby.lobby_id} with players: {', '.join(lobby.players.values())}")
+
+        lobby.create_game()
     
     button.callback = callback
     return button
