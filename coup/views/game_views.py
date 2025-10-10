@@ -50,6 +50,12 @@ def create_prompt_view(target, future):
     view.add_item(create_prompt_button(target, future))
     return view
 
+def create_hand_view(game):
+    """Creates a prompt allowing players to see their hand/coins"""
+    view = View(timeout=None)
+    view.add_item(create_hand_button(game))
+    return view
+
 # -----------------------
 # Embeds
 # -----------------------
@@ -78,13 +84,19 @@ def create_target_embed(game):
 
 def create_prompt_embed(target):
     embed = discord.Embed(
-        title=f"{target.user_name}: Please choose an influence card to lsoe."
+        title=f"{target.user_name}: Please choose an influence card to lose."
     )
     return embed
 
 def create_influence_select_embed():
     embed = discord.Embed(
         title="Please choose your choice of role to lose."
+    )
+    return embed
+
+def create_hand_embed():
+    embed = discord.Embed(
+        title="Click to View Your Hand and Coins."
     )
     return embed
 
@@ -286,6 +298,27 @@ def create_prompt_button(target, future):
 
     button.callback = callback
     return button
+
+def create_hand_button(game):
+    button = Button(label="View Info", style=discord.ButtonStyle.blurple)
+
+    async def callback(interaction: discord.Interaction):
+        user = interaction.user
+
+        if user.id not in game.get_player_ids():
+            await interaction.response.send_message(
+                "You are not in this game!", ephemeral=True
+            )
+        else:
+            player = game.get_player_by_id(user.id)
+            await interaction.response.send_message(
+                f"Hand: {player.hand}. Coins: {player.coins}.",
+                ephemeral=True
+            )
+
+    button.callback = callback
+    return button
+
 
 # --------------
 # Misc.

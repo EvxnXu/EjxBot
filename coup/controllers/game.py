@@ -6,10 +6,11 @@ import logging
 from collections import deque
 from coup.models import Player, Deck, Action, Coup
 from coup.views import (
-    create_action_view, create_target_view, 
-    create_response_view, create_action_embed, 
-    create_response_embed, create_target_embed, update_response_timer, 
-    create_prompt_view, create_prompt_embed
+    create_action_view, create_action_embed,
+    create_target_view, create_target_embed,
+    create_response_view, create_response_embed, update_response_timer,
+    create_prompt_view, create_prompt_embed,
+    create_hand_view, create_hand_embed
     )
 
 logger = logging.getLogger("coup")
@@ -26,10 +27,11 @@ class Game:
         self.game_active = True
         self.game_thread: discord.Thread | None = None
         self.prev_msg: discord.Message | None = None
+        self.hand_msg: discord.Message | None = None
         # Turn Data
         self.turn_order = deque()
         self.current_player: Player | None = None
-        self.current_action: Action = None
+        self.current_action: Action | None = None
         self.turn_completed = asyncio.Event() # To check for turn finish before advancing turn order
 
         # Deal 2 cards to each player
@@ -37,7 +39,7 @@ class Game:
             player.gain_influence(self.deck.draw())
             player.gain_influence(self.deck.draw())
 
-        # TODO: Tell players their cards
+        
 
         # Randomize turn order
         randomized = random.sample(self.players, k=len(self.players))
@@ -59,12 +61,19 @@ class Game:
 
     async def game_loop(self, msg: discord.Message):
         """Main game loop."""
-        # Create game thread
+        # Create Game Thread
         try:
-            self.game_thread = await msg.create_thread(name="Game Thread", auto_archive_duration=60)
+            self.game_thread = await msg.create_thread(name="Game Thread", auto_archive_duration=1440)
         except Exception as e:
             logger.error(f"Failed to create thread: {e}")
             return # Do not continue if game thread doesn't exist
+
+        # Start Sending Hand Message
+        try:
+            asyncio.create_task(self.start_hand_loop())
+        except Exception as e:
+            logger.error(f"Failed to start hand loop: {e}")
+            return
 
         await self.ping_players()
 
@@ -142,6 +151,23 @@ class Game:
     # -----------------------
     # Message Handling
     # -----------------------
+
+    async def send_hand_msg(self):
+        if self.hand_msg:
+            try:
+                await self.hand_msg.delete()
+            except:
+                logger.error("Could not delete the previous hand_msg")
+        
+        self.hand_msg = await self.game_thread.send(
+            embed=create_hand_embed(),
+            view=create_hand_view(self)
+        )
+
+    async def start_hand_loop(self):
+        while self.game_active:
+            await self.send_hand_msg()
+            await asyncio.sleep(30)
     
     async def send_update_msg(self, content: str):
         """Delete previous interactable message and send a log message in thread."""
