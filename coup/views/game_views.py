@@ -62,41 +62,59 @@ def create_hand_view(game):
 
 def create_action_embed(game):
     embed = discord.Embed(
-        title=f"It is {game.current_player.user_name}'s turn.",
-        description="Please choose an action for your turn"
+        title=f"It is {game.current_player.name}'s turn.",
+        description="Please choose an action for your turn."
     )
     return embed
 
 def create_response_embed(game):
     # Build title depending on whether the action has a target and a response is occuring
-    # TODO: Clean up the title
+    action = game.current_action
+    title = ""
+    if action.blocked:
+        title += f"{action.blocker.name} is attempting to block "
+    title += f"{action.actor.name} attempting to {action.name}."
     embed = discord.Embed(
-        description="If you would like to respond to this action, choose a response."
+        title=title,
+        description="If you would like to respond, choose a response."
     )
 
     return embed
 
 def create_target_embed(game):
     embed = discord.Embed(
-        title=f"{game.current_player.user_name}, please choose a target for {game.current_action.name}:"
+        title=f"{game.current_player.name}, Choose a target for {game.current_action.name}:"
     )
     return embed
 
 def create_prompt_embed(target):
     embed = discord.Embed(
-        title=f"{target.user_name}: Please choose an influence card to lose."
+        description=f"{target.name}: Choose influence card to lose:"
     )
     return embed
 
 def create_influence_select_embed():
     embed = discord.Embed(
-        title="Please choose your choice of role to lose."
+        description="Choose influence to lose:"
     )
     return embed
 
-def create_hand_embed():
+def create_turn_start_embed(game):
     embed = discord.Embed(
-        title="Click to View Your Hand and Coins."
+        title=f"{game.current_player.name}'s Turn Has Begun!",
+        description=f"{game.current_player.name} - Influence: {game.current_player.num_influence()}; Coins: {game.current_player.coins}"
+    )
+    values = []
+    for player in game.turn_order:
+        string = f"{player.name} - Influence: {player.num_influence()}; Coins: {player.coins}"
+        values.append(string)
+    embed.add_field(
+        name="Turn Order",
+        value='\n'.join(values)
+    )
+    embed.add_field(
+        name=f"Revealed Cards",
+        value=f"Cards in Deck: {game.deck.deck_size()}\n" + '\n'.join(game.deck.revealed)
     )
     return embed
 
@@ -112,7 +130,7 @@ def create_action_select(game, view):
 
     async def callback(interaction: discord.Interaction):
         user = interaction.user
-        if user.id != game.current_player.user_id:
+        if user.id != game.current_player.id:
             await interaction.response.send_message("It is not your turn!", ephemeral=True)
             return
      
@@ -123,8 +141,10 @@ def create_action_select(game, view):
         select.disabled = True
         await interaction.response.edit_message(view=view)
 
-        # Send Update and Handle Action
-        await game.send_update_msg(f"{user.name} chose {choice}!")
+        # Send Update if respondable
+        if action_class not in (Income, Coup):
+            await game.send_update_msg(f"{game.current_player.name} is attempting to {choice}!")
+        # Handle Action
         await game.action_selected(action_class)
 
     select.callback = callback
@@ -132,7 +152,7 @@ def create_action_select(game, view):
 
 def create_target_select(game, view):
     current_player = game.current_player
-    targets = [p for p in game.players if p.user_id != current_player.user_id]
+    targets = [p for p in game.players if p.id != current_player.id]
 
     # Error Handling
     if not targets: 
@@ -141,8 +161,8 @@ def create_target_select(game, view):
 
     options = [
         discord.SelectOption(
-            label=p.user_name,
-            value=str(p.user_id)
+            label=p.name,
+            value=str(p.id)
         )
         for p in targets
     ]
@@ -157,7 +177,7 @@ def create_target_select(game, view):
     async def callback(interaction: discord.Interaction):
         user = interaction.user
 
-        if user.id != game.current_player.user_id:
+        if user.id != game.current_player.id:
             await interaction.response.send_message(
                 "It is not your turn!", ephemeral=True
             )
@@ -173,7 +193,7 @@ def create_target_select(game, view):
         game.current_action.target = target_player
 
         await game.send_update_msg(
-            f"{user.name} is attempting {game.current_action.name} on {target_player.user_name} (<@{target_id}>)!"
+            f"{game.get_player_by_id(user.id).name} is attempting {game.current_action.name} on {target_player.name} (<@{target_id}>)!"
         )
         await interaction.response.defer()
         await game.target_selected()
@@ -203,22 +223,27 @@ def create_influence_select(player, future):
         selection = select.values[0]
         future.set_result(selection)
 
+        # Disable the Select to Show Choice Made
+        select.disabled = True
+        await interaction.response.edit_message(view=select.view)
+
     select.callback = callback
     return select
+
 # -----------------------
 # Buttons
 # -----------------------
 
 def create_block_button(game):
     """Generic Block Button"""
-    button = Button(label="Block", style=discord.ButtonStyle.primary)
+    button = Button(label="Block", style=discord.ButtonStyle.danger)
 
     async def callback(interaction: discord.Interaction):
         user = interaction.user
         action: Action = game.current_action
 
         # Validate that the user can block
-        if user.id == action.actor.user_id or user.id not in game.get_turn_order_ids():
+        if user.id == action.actor.id or user.id not in game.get_turn_order_ids():
             await interaction.response.send_message(
                 "You cannot block!", 
                 ephemeral=True
@@ -245,7 +270,7 @@ def create_challenge_button(game):
 
         if action.blocked:
             # Challenging the block
-            if user.id == action.blocker.user_id or user.id not in game.get_player_ids():
+            if user.id == action.blocker.id or user.id not in game.get_player_ids():
                 await interaction.response.send_message(
                     "You cannot challenge this block!", 
                     ephemeral=True
@@ -253,7 +278,7 @@ def create_challenge_button(game):
                 return
         else:
             # Challenging the Action
-            if user.id not in game.get_turn_order_ids() or user.id == action.actor.user_id:
+            if user.id not in game.get_turn_order_ids() or user.id == action.actor.id:
                 await interaction.response.send_message(
                     "You cannot challenge this action!", 
                     ephemeral=True
@@ -266,9 +291,9 @@ def create_challenge_button(game):
 
         # Send Update Message
         if game.current_action.blocked == False:
-            await game.send_update_msg(f"{user.name} has challenged the action!")
+            await game.send_update_msg(f"{action.challenger.name} has challenged the action!")
         else:
-            await game.send_update_msg(f"{user.name} has challenged the role block!")
+            await game.send_update_msg(f"{action.challenger.name} has challenged the role block!")
         await interaction.response.defer()
         # Handle the Challenge
         await game.handle_challenge()
@@ -282,7 +307,7 @@ def create_prompt_button(target, future):
     async def callback(interaction: discord.Interaction):
         user = interaction.user
         # Validate user
-        if user.id != target.user_id:
+        if user.id != target.id:
             await interaction.response.send_message(
                 "You are not the player losing influence!",
                 ephemeral=True
@@ -300,7 +325,7 @@ def create_prompt_button(target, future):
     return button
 
 def create_hand_button(game):
-    button = Button(label="View Info", style=discord.ButtonStyle.blurple)
+    button = Button(label="Check Hand", style=discord.ButtonStyle.blurple)
 
     async def callback(interaction: discord.Interaction):
         user = interaction.user
@@ -312,13 +337,12 @@ def create_hand_button(game):
         else:
             player = game.get_player_by_id(user.id)
             await interaction.response.send_message(
-                f"Hand: {player.hand}. Coins: {player.coins}.",
+                f"Hand: {player.hand}",
                 ephemeral=True
             )
 
     button.callback = callback
     return button
-
 
 # --------------
 # Misc.

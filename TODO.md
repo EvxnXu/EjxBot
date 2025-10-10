@@ -1,12 +1,12 @@
 # EjxBot
 
 ### Coup Implementation
-- [x] Create Coup Cog. 
-- [x] Create Lobby Controller.  
+- [x] Implement Coup Cog. 
+- [x] Implement Lobby Controller.  
   - [ ] Improve UI Elements
     - [ ] Display Lobby ID on Lobby Message. 
     - [ ] Add Game Start/Thread Creation Message.  
-- [x] Create Game Controller. 
+- [ ] Implement Game Controller. 
   - [x] Create Deck Model. 
   - [x] Create Player Model. 
   - [x] Create Action Model. 
@@ -16,8 +16,9 @@
     - [x] View for Game Challenge Action.  
   - [x] Implement Game Flow. 
     - [x] Initialize Game. 
-    - [x] Show Players their cards. 
-    - [x] Implement Turn Flow. 
+    - [ ] Implement Start of Turn Message with Show Hand Button. 
+    - [ ] Implement Turn Flow. 
+      - [ ] Implement Message to Allow Players to Choose Which Role to Block as
     - [ ] Show End of Game Information/Message. 
 - [ ] Implement Backend DB to store game history statistics. 
 - [ ] Improve UI/Message Elements. Add Graphics.  
