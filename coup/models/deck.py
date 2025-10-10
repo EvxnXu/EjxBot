@@ -9,7 +9,7 @@ cards = ["Duke", "Assassin", "Ambassador", "Captain", "Contessa", "Inquisitor"]
 class Deck():
     """Model represeting the coup deck"""
     def __init__(self):
-        self.cards = ["Duke"] * 3 + ["Assassin"] * 3 + ["Ambassador"] * 3 + ["Captain"] * 3 + ["Contessa"] * 3
+        self.cards = ["Duke"] * 3 + ["Assassin"] * 3 + ["Inquisitor"] * 3 + ["Captain"] * 3 + ["Contessa"] * 3
         self.shuffle()
         self.burned = self.cards.pop() # burn a card at the start of the game
         self.revealed = [] # list of revealed role cards

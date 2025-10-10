@@ -11,7 +11,7 @@ class Lobby:
     """Model representing the state of a game lobby."""
     def __init__(self, lobby_id: int, ctx: commands.Context):
         self.lobby_id = lobby_id
-        self.players = {} # user_id -> user_name
+        self.players = {} # id -> name
         self.game = None # Game State Object
         self.prev_msg = None
 
@@ -63,13 +63,13 @@ class Lobby:
     
     def add_player(self, user):
         """Add player to lobby"""
-        self.players[user.id] = user.name
-        logger.info(f"{self} had added {user.id}: {user.name}")
+        self.players[user.id] = user.display_name
+        logger.info(f"{self} had added {user.id}: {user.display_name}")
 
     def remove_player(self, user):
         """Remove player from lobby"""
         self.players.pop(user.id, None)
-        logger.info(f"{self} had removed {user.id}: {user.name}")
+        logger.info(f"{self} had removed {user.id}: {user.display_name}")
     
     def is_full(self):
         return len(self.players) >= 6

@@ -3,6 +3,7 @@ import asyncio
 import random
 import discord
 import logging
+from typing import Optional
 from collections import deque
 from coup.models import Player, Deck, Action, Coup
 from coup.views import (
@@ -10,7 +11,7 @@ from coup.views import (
     create_target_view, create_target_embed,
     create_response_view, create_response_embed, update_response_timer,
     create_prompt_view, create_prompt_embed,
-    create_hand_view, create_hand_embed
+    create_hand_view, create_turn_start_embed
     )
 
 logger = logging.getLogger("coup")
@@ -19,7 +20,7 @@ class Game:
     """Model representing the state of an ongoing game."""
     def __init__(self, players: dict):
         # Create Player objects from the input mapping
-        self.players = [Player(user_id, user_name) for user_id, user_name in players.items()]
+        self.players = [Player(id, name) for id, name in players.items()]
         self.dead: list[Player] = []
         # Create Deck
         self.deck = Deck()
@@ -27,7 +28,6 @@ class Game:
         self.game_active = True
         self.game_thread: discord.Thread | None = None
         self.prev_msg: discord.Message | None = None
-        self.hand_msg: discord.Message | None = None
         # Turn Data
         self.turn_order = deque()
         self.current_player: Player | None = None
@@ -38,8 +38,6 @@ class Game:
         for player in self.players:
             player.gain_influence(self.deck.draw())
             player.gain_influence(self.deck.draw())
-
-        
 
         # Randomize turn order
         randomized = random.sample(self.players, k=len(self.players))
@@ -68,16 +66,10 @@ class Game:
             logger.error(f"Failed to create thread: {e}")
             return # Do not continue if game thread doesn't exist
 
-        # Start Sending Hand Message
-        try:
-            asyncio.create_task(self.start_hand_loop())
-        except Exception as e:
-            logger.error(f"Failed to start hand loop: {e}")
-            return
-
         await self.ping_players()
 
         while self.game_active:
+            await self.send_turn_start_msg()
             await self.take_turn()
 
             # Wait until Active Player Finishes Taking Turn
@@ -129,45 +121,39 @@ class Game:
 
     def get_player_ids(self):
         """Return list of player IDs in game"""
-        return [p.user_id for p in self.players]
+        return [p.id for p in self.players]
 
     def get_turn_order_ids(self):
-        """Return list of player IDs in turn order  ."""
-        return [p.user_id for p in self.turn_order]
+        """Return list of player IDs in turn order."""
+        return [p.id for p in self.turn_order]
+
+    def get_turn_order_names(self):
+        """Return list of player names in turn order."""
+        return [p.name for p in self.turn_order]
     
-    def get_player_by_id(self, user_id: int) -> Player:
-        """Returns Player Object given a user_id"""
+    def get_player_by_id(self, id: int) -> Player:
+        """Returns Player Object given an id"""
         for player in self.players:
-            if player.user_id == user_id:
+            if player.id == id:
                 return player
-        logger.error(f"Player with id {user_id} not found in list of living players")
+        logger.error(f"Player with id {id} not found in list of living players")
         return None
     
     async def ping_players(self):
         """Ping all players at start of game to invite them to game thread."""
-        mentions = " ".join([f"<@{p.user_id}>" for p in self.players])
+        mentions = " ".join([f"<@{p.id}>" for p in self.players])
         await self.game_thread.send(mentions + " The game has begun!")
 
     # -----------------------
     # Message Handling
     # -----------------------
 
-    async def send_hand_msg(self):
-        if self.hand_msg:
-            try:
-                await self.hand_msg.delete()
-            except:
-                logger.error("Could not delete the previous hand_msg")
-        
+    async def send_turn_start_msg(self):
         self.hand_msg = await self.game_thread.send(
-            embed=create_hand_embed(),
+            embed=create_turn_start_embed(self),
             view=create_hand_view(self)
         )
-
-    async def start_hand_loop(self):
-        while self.game_active:
-            await self.send_hand_msg()
-            await asyncio.sleep(30)
+        logger.info(f"Start of Turn Message Sent.")
     
     async def send_update_msg(self, content: str):
         """Delete previous interactable message and send a log message in thread."""
@@ -263,23 +249,35 @@ class Game:
             # If blocker does not have role they are blocking with
             if not blocker.check_role(action.blocking_role):
                 logger.info("Defending Player does not have role.")
+                await self.send_update_msg(
+                    f"{challenger.name} won the challenge against {blocker.name}; {blocker.name} does not have {action.blocking_role}."
+                )
                 # Blocker loses influence, return to revealed pile
                 await self.handle_lose_influence(blocker)
                 # Check if Blocker is Alive
                 await self.check_alive(blocker)
                 # Carry out action (Block Failed)
+                await self.send_update_msg(
+                    f"{actor.name} succesfully carries out {action.name}."
+                )
                 await action.execute(self)
             # If blocker has role
             else:
                 logger.info("Defending Player has role.")
+                await self.send_update_msg(
+                    f"{challenger.name} lost the challenge against {blocker.name}; {blocker.name} had {action.blocking_role}."
+                )
                 # Challenger Loses Influence
                 await self.handle_lose_influence(challenger)
                 # Blocker Exchanges Challenged Role
-                await self.handle_lose_influence(blocker, True)
+                await self.handle_lose_influence(player=blocker, exchange=True)
                 blocker.gain_influence(self.deck.draw())
                 # Check if Challenger is Alive
                 await self.check_alive(challenger)
                 # Action is Blocked
+                await self.send_update_msg(
+                    f"{blocker.name} succesfully blocks {action.name}."
+                )
                 await action.on_block(self)
         # Case: Challenge is made on actor
         else:
@@ -288,24 +286,36 @@ class Game:
             # If actor does not have role they are blocking with
             if not actor.check_role(acting_role):
                 logger.info("Defending Player does not have role.")
+                await self.send_update_msg(
+                    f"{challenger.name} won the challenge against {actor.name}; {actor.name} does not have {acting_role}."
+                )
                 # Actor Loses Influence
                 await self.handle_lose_influence(actor)
                 # Check if Actor is Alive
                 await self.check_alive(actor)
                 # Action is Blocked
-                action.on_block()
+                await self.send_update_msg(
+                    f"{blocker.name} succesfully blocks {action.name}."
+                )
+                await action.on_block(self)
             # If actor has role
             else:
                 logger.info("Defending Player has role.")
+                await self.send_update_msg(
+                    f"{challenger.name} lost the challenge against {actor.name}; {actor.name} had {acting_role}."
+                )
                 # Challenger Loses Influence
                 await self.handle_lose_influence(challenger)
                 # Actor Exchanges Challenged Role
-                await self.handle_lose_influence(actor, True)
+                await self.handle_lose_influence(player=actor, exchange=True)
                 actor.gain_influence(self.deck.draw())
                 # Check if Challenger is Alive
                 await self.check_alive(challenger)
                 # Carry out Action
-                await action.execute()
+                await self.send_update_msg(
+                    f"{actor.name} succesfully carries out {action.name}."
+                )
+                await action.execute(self)
 
     async def action_selected(self, action: Action):
         """Handle the logic following an action being selected"""
@@ -333,10 +343,11 @@ class Game:
 
     async def no_response(self):
         """Handle no response to an action or block"""
-        if self.current_action.blocked:
-            await self.current_action.on_block(self)
+        action = self.current_action
+        if action.blocked:
+            await action.on_block(self)
         else:
-            await self.current_action.execute(self)
+            await action.execute(self)
 
     async def check_alive(self, player: Player):
         """Handle Player Death if Player Loses Influence"""
@@ -351,12 +362,12 @@ class Game:
             self.dead.append(player)
         return
     
-    async def handle_lose_influence(self, player: Player, exchange: bool = False):
+    async def handle_lose_influence(self, player: Player, card: Optional[str] = None, exchange: bool = False ):
         """Handle Logic for Player Losing Influence."""
         logger.info(f"Handling {player} losing influence")
         card_choice = None
         # Obtain the Card Player is Losing
-        if player.num_influence() >= 2:
+        if player.num_influence() >= 2 and not card:
             logger.info(f"Player has {player.num_influence()} cards. Must Choose one.")
             # Must allow player to choose which to lose.
             future = asyncio.get_event_loop().create_future()
@@ -365,7 +376,9 @@ class Game:
                 embed = create_prompt_embed(target=player))
             card_choice = await future
             await msg.delete()
-            return player.lose_influence(card_choice)
+            player.lose_influence(card_choice)
+        elif player.num_influence() >= 2 and card:
+            card_choice = player.lose_influence(card)
         else:
             # No need to get card choice
             card_choice = player.lose_influence()
@@ -377,5 +390,5 @@ class Game:
             # Return to Revealed Pile, send update message with card's identity
             self.deck.return_revealed(card_choice)
             await self.send_update_msg(
-                f"{player.user_name} has lost influence: {card_choice}"
+                f"{player.name} has lost influence: {card_choice}"
             )

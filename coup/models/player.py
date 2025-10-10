@@ -6,16 +6,15 @@ logger = logging.getLogger("coup")
 
 class Player():
     """Class represnting a player's state in the game."""
-    def __init__(self, user_id: int, user_name: str):
-
-        logger.info(f"Created Player Object with UID: {user_id} and user_name: {user_name}")
-        self.user_id = user_id
-        self.user_name = user_name
+    def __init__(self, uid: int, uname: str):
+        logger.info(f"Created Player Object with UID: {uid} and name: {uname}")
+        self.id = uid
+        self.name = uname
         self.coins = 2
         self.hand = []
 
     def __repr__(self):
-        return f"<Player {self.user_name} ({self.user_id}) coins={self.coins} hand={self.hand}>"
+        return f"<Player {self.name} ({self.id}) coins={self.coins} hand={self.hand}>"
     
     def is_alive(self) -> bool:
         """Checks if Player still has an influence card."""

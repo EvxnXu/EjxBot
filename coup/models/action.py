@@ -35,6 +35,9 @@ class Action(ABC):
         
     async def on_block(self, game):
         # Default Behavior: Action doesn't go through, end turn
+        game.send_update_message(
+            f"{self.name} got blocked by {self.blocker.name}."
+        )
         await game.end_turn()
 
     def is_valid(self) -> bool:
@@ -50,12 +53,12 @@ class Action(ABC):
         return False
     
 class Income(Action):
-    name = "income"
+    name = "Collect Income"
 
     async def execute(self, game):
         self.actor.gain_income(1)
         await game.send_update_msg(
-            content=f"{self.actor.user_name} gained 1 coin. They now have {self.actor.coins} coin(s)."
+            content=f"{self.actor.name} gained 1 coin. They now have {self.actor.coins} coin(s)."
         )
         await game.end_turn()
 
@@ -63,12 +66,12 @@ class Income(Action):
         return False
 
 class Foreign_Aid(Action):
-    name = "foreign_aid"
+    name = "Collect Foreign Aid"
 
     async def execute(self, game):
         self.actor.gain_income(2)
         await game.send_update_msg(
-            content=f"{self.actor.user_name} gained 2 coins. They now have {self.actor.coins} coin(s)."
+            content=f"{self.actor.name} gained 2 coins. They now have {self.actor.coins} coin(s)."
         )
         await game.end_turn()
     
@@ -76,18 +79,18 @@ class Foreign_Aid(Action):
         return True
 
 class Tax(Action):
-    name = "tax"
+    name = "Collect Tax"
     role = "Duke"
 
     async def execute(self, game):
         self.actor.gain_income(3)
         await game.send_update_msg(
-            content=f"{self.actor.user_name} gained 3 coins. They now have {self.actor.coins} coin(s)."
+            content=f"{self.actor.name} gained 3 coins. They now have {self.actor.coins} coin(s)."
         )
         await game.end_turn()
 
 class Coup(Action):
-    name = "coup"
+    name = "Coup"
 
     async def execute(self, game):
         # Target Loses Influence
@@ -108,19 +111,19 @@ class Coup(Action):
         return False
 
 class Exchange(Action):
-    name = "exchange"
-    role = "Ambassador"
+    name = "Exchange Roles"
+    role = "Inquisitor"
 
     async def execute(self, game):
         # Draw a New Role Card from the Deck
         self.actor.gain_influence(game.deck.draw())
         # Return a Choice of Role Card to the Deck
-        returned_card = await game.handle_lose_influence(self.actor)
+        returned_card = await game.handle_lose_influence(player=self.actor, exchange=True)
         game.deck.return_deck(returned_card)
         await game.end_turn()
 
 class Assassinate(Action):
-    name = "assassinate"
+    name = "Assasinate"
     role = "Assassin"
 
     async def execute(self, game):
@@ -146,7 +149,7 @@ class Assassinate(Action):
         return True
 
 class Steal(Action):
-    name = "steal"
+    name = "Steal"
     role = "Captain"
 
     async def execute(self, game):
