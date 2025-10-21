@@ -35,7 +35,7 @@ class Action(ABC):
         
     async def on_block(self, game):
         # Default Behavior: Action doesn't go through, end turn
-        game.send_update_message(
+        game.send_update_msg(
             f"{self.name} got blocked by {self.blocker.name}."
         )
         await game.end_turn()
@@ -94,8 +94,7 @@ class Coup(Action):
 
     async def execute(self, game):
         # Target Loses Influence
-        lost_card = await game.handle_lose_influence(self.target)
-        game.deck.return_revealed(lost_card)
+        await game.handle_lose_influence(self.target)
         self.actor.spend_coins(7) # Actor spends 7 coins
         await game.end_turn()
 
@@ -115,11 +114,12 @@ class Exchange(Action):
     role = "Inquisitor"
 
     async def execute(self, game):
-        # Draw a New Role Card from the Deck
+        # Draw 1 card from the deck
         self.actor.gain_influence(game.deck.draw())
+
         # Return a Choice of Role Card to the Deck
-        returned_card = await game.handle_lose_influence(player=self.actor, exchange=True)
-        game.deck.return_deck(returned_card)
+        await game.handle_lose_influence(player=self.actor, exchange=True)
+        
         await game.end_turn()
 
 class Assassinate(Action):
@@ -128,8 +128,7 @@ class Assassinate(Action):
 
     async def execute(self, game):
         # Target Loses Influence
-        lost_card = await game.handle_lose_influence(self.target)
-        game.deck.return_revealed(lost_card)
+        await game.handle_lose_influence(self.target)
         self.actor.spend_coins(3) # Actor spends 3 coins
         await game.end_turn()
 
@@ -153,9 +152,10 @@ class Steal(Action):
     role = "Captain"
 
     async def execute(self, game):
-        self.target.lose_coins(2) # Target loses 2 coins
-        self.actor.gain_income(2) # Actor gains 2 coins
-        logger.info(f"{self.actor} stole 2 coins from {self.target}")
+        amount = min(2, self.target.coins)
+        self.actor.gain_income(amount) # Actor gains up to 2 coins
+        self.target.lose_coins(amount) # Target loses 2 coins
+        logger.info(f"{self.actor} stole {amount} coins from {self.target}")
         await game.end_turn()
 
     def has_target(self):

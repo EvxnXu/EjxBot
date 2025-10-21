@@ -78,7 +78,7 @@ class Lobby:
         return len(self.players) == 0
     
     def can_start(self):
-        return len(self.players) >= 2 and not self.is_full()
+        return len(self.players) >= 2
     
     def create_game(self):
         """Initialize game instance"""
