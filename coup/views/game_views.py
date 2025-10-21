@@ -72,7 +72,7 @@ def create_response_embed(game):
     action = game.current_action
     title = ""
     if action.blocked:
-        title += f"{action.blocker.name} is attempting to block "
+        title += f"{action.blocker.name}, as {action.blocking_role}, is attempting to block "
     title += f"{action.actor.name} attempting to {action.name}."
     embed = discord.Embed(
         title=title,
@@ -170,8 +170,6 @@ def create_target_select(game, view):
     select = Select(
         placeholder=f"Choose a target for {game.current_action.name}...", 
         options=options, 
-        min_values=1, 
-        max_values=1
     )
 
     async def callback(interaction: discord.Interaction):
@@ -205,27 +203,48 @@ def create_influence_select(player, future):
     cards = [card for card in player.hand]
 
     options = [
-        discord.SelectOption(
-            label=card,
-            value=card
-        )
+        discord.SelectOption(label=card, value=card)
         for card in cards
     ]
 
+    view = View(timeout=None)
     select = Select(
         placeholder="Choose role to lose...",
         options=options,
-        min_values=1,
-        max_values=1
     )
 
     async def callback(interaction: discord.Interaction):
-        selection = select.values[0]
-        future.set_result(selection)
+        # Update Player's choice
+        future.set_result(select.values[0])
 
         # Disable the Select to Show Choice Made
         select.disabled = True
+
         await interaction.response.edit_message(view=select.view)
+
+    select.callback = callback
+    return select
+
+def choose_captain_inquisitor_select(player, future):
+    options = [discord.SelectOption(label=card, value=card) for card in ["Captain", "Inquisitor"]]
+
+    select = Select(
+        placeholder="Choose role to block with...",
+        options=options
+    )
+
+    async def callback(interaction: discord.Interaction):
+        user = interaction.user
+        if user.id != player.id:
+            await interaction.resopnse.send_message(
+                "Not Your Choice!", ephemeral = True
+            )
+
+        future.set_result(select.values[0])
+
+        # Disable the Select to Show Choice Made
+        select.disabled = True
+        await interaction.response.send_message(view=select.view)
 
     select.callback = callback
     return select
@@ -245,15 +264,32 @@ def create_block_button(game):
         # Validate that the user can block
         if user.id == action.actor.id or user.id not in game.get_turn_order_ids():
             await interaction.response.send_message(
-                "You cannot block!", 
-                ephemeral=True
+                "You cannot block!", ephemeral=True
             )
             return
         
         # Update Action
-        action.blocking_role = None # TODO: Implement a way to choose (2 roles can block steal)
         action.blocked = True
         action.blocker = game.get_player_by_id(user.id)
+
+        # If action is steal, must choose to block as captain or inquisitor
+        if action.name == "Steal":
+            future = asyncio.get_event_loop().create_future()
+
+            view = View(timeout=None)
+            view.add_item(choose_captain_inquisitor_select(action.blocker, future))
+
+            await interaction.response.send_message(
+                content="Choose how to block:",
+                view=view,
+                ephemeral=True
+            )
+            # Await Response
+            action.blocking_role = await future
+        # Otherwise, map action blocked to role (only one choice)
+        else:
+            mapping = {"Collect Foreign Aid": "Duke", "Assassinate": "Contessa"}
+            action.blocking_role = mapping[action.name]
 
         # Give chance to challenge
         await game.send_response_message()
@@ -305,21 +341,27 @@ def create_prompt_button(target, future):
     button = Button(label="Choose", style=discord.ButtonStyle.danger)
 
     async def callback(interaction: discord.Interaction):
-        user = interaction.user
-        # Validate user
-        if user.id != target.id:
-            await interaction.response.send_message(
-                "You are not the player losing influence!",
-                ephemeral=True
-            )
-        else:
-            view = View(timeout=None)
-            view.add_item(create_influence_select(target, future))
-            await interaction.response.send_message(
-                view=view,
-                embed=create_influence_select_embed(),
-                ephemeral=True
-            )
+        try:
+            user = interaction.user
+
+            # Validate user
+            if user.id != target.id:
+                await interaction.response.send_message(
+                    "You are not the player losing influence!",
+                    ephemeral=True
+                )
+
+            else:
+                view = View(timeout=None)
+                view.add_item(create_influence_select(target, future))
+                await interaction.response.send_message(
+                    view=view,
+                    embed=create_influence_select_embed(),
+                    ephemeral=True
+                )
+
+        except Exception as e:
+            logger.exception(f"error in button callback: {e}")
 
     button.callback = callback
     return button
