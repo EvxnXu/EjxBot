@@ -97,6 +97,7 @@ def create_response_embed(game):
     title = ""
     if action.blocked:
         title += f"{action.blocker.name}, as {action.blocking_role}, is attempting to block "
+        title += f"{action.blocker.name}, as {action.blocking_role}, is attempting to block "
     title += f"{action.actor.name} attempting to {action.name}."
 
     return discord.Embed(
@@ -297,6 +298,31 @@ def choose_captain_inquisitor_select(player, future):
 
         # Release Lock
         lock.release()
+
+    select.callback = callback
+    return select
+
+def choose_captain_inquisitor_select(player, future):
+    options = [discord.SelectOption(label=card, value=card) for card in ["Captain", "Inquisitor"]]
+
+    view = View(timeout=None)
+    select = Select(
+        placeholder="Choose role to block with...",
+        options=options
+    )
+
+    async def callback(interaction: discord.Interaction):
+        user = interaction.user
+        if user.id != player.id:
+            await interaction.resopnse.send_message(
+                "Not Your Choice!", ephemeral = True
+            )
+
+        future.set_result(select.values[0])
+
+        # Disable the Select to Show Choice Made
+        select.disabled = True
+        await interaction.response.send_message(view=select.view)
 
     select.callback = callback
     return select
