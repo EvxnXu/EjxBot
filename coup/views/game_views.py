@@ -368,7 +368,7 @@ def create_challenge_button(game):
 
     async def callback(interaction: discord.Interaction):
         # Check lock
-        if lock.is_processing:
+        if lock.is_processing():
             return
         
         # Validate User
