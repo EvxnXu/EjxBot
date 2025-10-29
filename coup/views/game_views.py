@@ -281,11 +281,11 @@ def choose_captain_inquisitor_select(player, future):
 
         # Validate User
         if interaction.user.id != player.id:
-            await interaction.resopnse.send_message("Not Your Choice!", ephemeral = True)
+            await interaction.response.send_message("Not Your Choice!", ephemeral = True)
             return
         
         # Acquire lock
-        if not lock.acquire:
+        if not lock.acquire():
             return
 
         # Set result
@@ -361,6 +361,7 @@ def create_block_button(game):
     button.callback = callback
     return button
 
+
 def create_challenge_button(game):
     button = Button(label="Challenge", style=discord.ButtonStyle.danger)
 
@@ -427,8 +428,7 @@ def create_prompt_button(target, future):
             return
         
         # Validate User
-        user = interaction.user
-        if user.id != target.id:
+        if interaction.user.id != target.id:
             await interaction.response.send_message("You are not the player losing influence!", ephemeral=True)
             return
         
