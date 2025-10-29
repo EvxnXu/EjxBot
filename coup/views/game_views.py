@@ -7,9 +7,32 @@ from coup.models import Action, Income, Foreign_Aid, Tax, Coup, Exchange, Assass
 
 logger = logging.getLogger("coup")
 
-# -----------------------
-# Views
-# -----------------------
+# === HELPERS === 
+
+class InteractionLock:
+    """Prevents race conditions on interactions"""
+    def __init__(self):
+        self.processing = False
+
+    def acquire(self):
+        """Attempt to acquire lock. Returns True if acquired"""
+        if self.processing:
+            return False
+        self.processing = True
+        return True
+    
+    def release(self):
+        """Release the lock"""
+        self.processing = False
+    
+    def is_processing(self):
+        """Check if currently processing"""
+        return self.processing
+    
+class PlayerChoice:
+    """Helper for waiting on player choices"""
+
+# === VIEWS ===
 
 def create_action_view(game):
     """Create and return a Discord UI View allowing current player to choose an action for their turn"""
@@ -17,11 +40,13 @@ def create_action_view(game):
     view.add_item(create_action_select(game, view))
     return view
 
+
 def create_target_view(game, force_coup=False):
     """Create dropdown select for a targeted action."""
     view = View(timeout=None)
     view.add_item(create_target_select(game, view))
     return view
+
 
 def create_response_view(game):
     """Creates a view for a message responding to an action"""
@@ -44,11 +69,13 @@ def create_response_view(game):
     
     return view
 
+
 def create_prompt_view(target, future):
     """Creates a prompt button to choose influence to lose"""
     view = View(timeout=None)
     view.add_item(create_prompt_button(target, future))
     return view
+
 
 def create_hand_view(game):
     """Creates a prompt allowing players to see their hand/coins"""
@@ -56,48 +83,49 @@ def create_hand_view(game):
     view.add_item(create_hand_button(game))
     return view
 
-# -----------------------
-# Embeds
-# -----------------------
+# === EMBEDS ===
 
 def create_action_embed(game):
-    embed = discord.Embed(
+    return discord.Embed(
         title=f"It is {game.current_player.name}'s turn.",
         description="Please choose an action for your turn."
     )
-    return embed
+
 
 def create_response_embed(game):
-    # Build title depending on whether the action has a target and a response is occuring
     action = game.current_action
     title = ""
     if action.blocked:
         title += f"{action.blocker.name}, as {action.blocking_role}, is attempting to block "
     title += f"{action.actor.name} attempting to {action.name}."
-    embed = discord.Embed(
+
+    return discord.Embed(
         title=title,
         description="If you would like to respond, choose a response."
     )
 
-    return embed
 
 def create_target_embed(game):
-    embed = discord.Embed(
+    return discord.Embed(
         title=f"{game.current_player.name}, Choose a target for {game.current_action.name}:"
     )
-    return embed
 
-def create_prompt_embed(target):
-    embed = discord.Embed(
-        description=f"{target.name}: Choose influence card to lose:"
-    )
-    return embed
+
+def create_prompt_embed(target, mode: str):
+    descriptions = {
+        "lose": f"{target.name}: Choose an influence card to lose:",
+        "examine": f"{target.name}: Choose an influence card to be examined:"
+    }
+    description = descriptions.get(mode)
+
+    return discord.Embed(description=description)
+
 
 def create_influence_select_embed():
-    embed = discord.Embed(
+    return discord.Embed(
         description="Choose influence to lose:"
     )
-    return embed
+
 
 def create_turn_start_embed(game):
     embed = discord.Embed(
@@ -118,9 +146,7 @@ def create_turn_start_embed(game):
     )
     return embed
 
-# ----------------------
-# Select Menus
-# ----------------------
+# === SELECT MENUS ===
 
 def create_action_select(game, view):
     actions = [Income, Foreign_Aid, Coup, Tax, Exchange, Assassinate, Steal]
@@ -128,63 +154,72 @@ def create_action_select(game, view):
     mapping = {a.name: a for a in actions}
     select = Select(placeholder="Choose your action...", options=options, min_values=1, max_values=1)
 
+    lock = InteractionLock()
+
     async def callback(interaction: discord.Interaction):
+        # Check lock
+        if lock.is_processing():
+            return
+        
+        # Validate user
         user = interaction.user
         if user.id != game.current_player.id:
             await interaction.response.send_message("It is not your turn!", ephemeral=True)
             return
-     
+        
+        # Acquire lock
+        if not lock.acquire():
+            return
+        
+        # Set result
         choice = select.values[0]
         action_class: Action = mapping[choice]
 
         # Disable select immediately
         select.disabled = True
-        await interaction.response.edit_message(view=view)
+        await interaction.message.edit(view=view)
 
         # Send Update if respondable
         if action_class not in (Income, Coup):
             await game.send_update_msg(f"{game.current_player.name} is attempting to {choice}!")
+
         # Handle Action
         await game.action_selected(action_class)
+
+        # Release lock
+        lock.release()
 
     select.callback = callback
     return select
 
+
 def create_target_select(game, view):
-    current_player = game.current_player
-    targets = [p for p in game.players if p.id != current_player.id]
+    targets = [p for p in game.players if p.id != game.current_player.id]
+    options = [discord.SelectOption(label=p.name, value=str(p.id)) for p in targets]
+    select = Select(placeholder=f"Choose a target for {game.current_action.name}...", options=options)
 
-    # Error Handling
-    if not targets: 
-        logger.error(f"{current_player} has no targets in {game}")
-        return
-
-    options = [
-        discord.SelectOption(
-            label=p.name,
-            value=str(p.id)
-        )
-        for p in targets
-    ]
-
-    select = Select(
-        placeholder=f"Choose a target for {game.current_action.name}...", 
-        options=options, 
-    )
+    lock = InteractionLock()
 
     async def callback(interaction: discord.Interaction):
+        # Check lock
+        if lock.is_processing():
+            return
+        
+        # Validate Player
         user = interaction.user
-
         if user.id != game.current_player.id:
-            await interaction.response.send_message(
-                "It is not your turn!", ephemeral=True
-            )
+            await interaction.response.send_message("It is not your turn!", ephemeral=True)
             return
 
+        # Acquire lock
+        if not lock.acquire():
+            return
+        
+        # Set Result
         target_id = int(select.values[0])
         target_player = game.get_player_by_id(target_id)
 
-        # Disable select immediately
+        # Disable Select
         select.disabled = True
         await interaction.message.edit(view=view)
 
@@ -193,58 +228,75 @@ def create_target_select(game, view):
         await game.send_update_msg(
             f"{game.get_player_by_id(user.id).name} is attempting {game.current_action.name} on {target_player.name} (<@{target_id}>)!"
         )
-        await interaction.response.defer()
+
         await game.target_selected()
+
+        # Release lock
+        lock.release()
 
     select.callback = callback
     return select
+
 
 def create_influence_select(player, future):
     cards = [card for card in player.hand]
+    options = [discord.SelectOption(label=card, value=card) for card in cards]
+    select = Select(placeholder="Choose role to lose...", options=options)
 
-    options = [
-        discord.SelectOption(label=card, value=card)
-        for card in cards
-    ]
-
-    view = View(timeout=None)
-    select = Select(
-        placeholder="Choose role to lose...",
-        options=options,
-    )
+    lock = InteractionLock()
 
     async def callback(interaction: discord.Interaction):
-        # Update Player's choice
+        # Check lock
+        if lock.is_processing():
+            return
+        
+        # Acquire lock
+        if not lock.acquire():
+            return
+
+        # Set Result
         future.set_result(select.values[0])
 
-        # Disable the Select to Show Choice Made
+        # Disable Select
         select.disabled = True
+        await interaction.message.edit(view=select.view)
 
-        await interaction.response.edit_message(view=select.view)
+        # Release lock
+        lock.release()
 
     select.callback = callback
     return select
 
+
 def choose_captain_inquisitor_select(player, future):
     options = [discord.SelectOption(label=card, value=card) for card in ["Captain", "Inquisitor"]]
+    select = Select(placeholder="Choose role to block with...", options=options)
 
-    select = Select(
-        placeholder="Choose role to block with...",
-        options=options
-    )
+    lock = InteractionLock()
 
     async def callback(interaction: discord.Interaction):
-        user = interaction.user
-        if user.id != player.id:
-            await interaction.resopnse.send_message(
-                "Not Your Choice!", ephemeral = True
-            )
+        # Check lock
+        if lock.is_processing():
+            return
 
+        # Validate Player
+        if interaction.user.id != player.id:
+            await interaction.resopnse.send_message("Not Your Choice!", ephemeral = True)
+            return
+        
+        # Acquire lock
+        if not lock.acquire:
+            return
+
+        # Set result
         future.set_result(select.values[0])
 
         # Disable the Select to Show Choice Made
         select.disabled = True
         await interaction.response.send_message(view=select.view)
+
+        # Release Lock
+        lock.release()
 
     select.callback = callback
     return select
@@ -337,6 +389,7 @@ def create_challenge_button(game):
     button.callback = callback
     return button
 
+
 def create_prompt_button(target, future):
     button = Button(label="Choose", style=discord.ButtonStyle.danger)
 
@@ -365,6 +418,7 @@ def create_prompt_button(target, future):
 
     button.callback = callback
     return button
+
 
 def create_hand_button(game):
     button = Button(label="Check Hand", style=discord.ButtonStyle.blurple)
