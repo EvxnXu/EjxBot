@@ -123,6 +123,15 @@ class Exchange(Action):
         
         await game.end_turn()
 
+class Examine(Action):
+    name = "Examine"
+    role = "Inquisitor"
+
+    async def execute(self, game):
+        # Target chooses card to reveal
+        await game.handle_examine(player=self.target)
+        await game.end_turn()
+
 class Assassinate(Action):
     name = "Assasinate"
     role = "Assassin"
