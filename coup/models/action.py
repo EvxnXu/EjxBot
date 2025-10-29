@@ -35,9 +35,10 @@ class Action(ABC):
         
     async def on_block(self, game):
         # Default Behavior: Action doesn't go through, end turn
-        game.send_update_msg(
-            f"{self.name} got blocked by {self.blocker.name}."
-        )
+        if self.blocked and not self.challenged:
+            game.send_update_msg(
+                f"{self.name} got blocked by {self.blocker.name}."
+            )
         await game.end_turn()
 
     def is_valid(self) -> bool:

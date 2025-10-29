@@ -270,8 +270,11 @@ class Game:
                 # Challenger Loses Influence
                 await self.handle_lose_influence(challenger)
                 # Blocker Exchanges Challenged Role
-                await self.handle_lose_influence(player=blocker, exchange=True)
+                await self.handle_lose_influence(player=blocker, card=action.blocking_role, exchange=True)
                 blocker.gain_influence(self.deck.draw())
+                await self.send_update_msg(
+                    f"{blocker.name} is exchanging {action.blocking_role} with a new card from the deck."
+                )
                 # Check if Challenger is Alive
                 await self.check_alive(challenger)
                 # Action is Blocked
@@ -307,8 +310,11 @@ class Game:
                 # Challenger Loses Influence
                 await self.handle_lose_influence(challenger)
                 # Actor Exchanges Challenged Role
-                await self.handle_lose_influence(player=actor, exchange=True)
+                await self.handle_lose_influence(player=actor, card=acting_role, exchange=True)
                 actor.gain_influence(self.deck.draw())
+                await self.send_update_msg(
+                    f"{actor.name} is exchanging {acting_role} with a new card from the deck."
+                )
                 # Check if Challenger is Alive
                 await self.check_alive(challenger)
                 # Carry out Action
