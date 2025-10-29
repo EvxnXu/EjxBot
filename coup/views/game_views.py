@@ -161,7 +161,7 @@ def create_action_select(game, view):
         if lock.is_processing():
             return
         
-        # Validate user
+        # Validate User
         user = interaction.user
         if user.id != game.current_player.id:
             await interaction.response.send_message("It is not your turn!", ephemeral=True)
@@ -205,7 +205,7 @@ def create_target_select(game, view):
         if lock.is_processing():
             return
         
-        # Validate Player
+        # Validate User
         user = interaction.user
         if user.id != game.current_player.id:
             await interaction.response.send_message("It is not your turn!", ephemeral=True)
@@ -279,7 +279,7 @@ def choose_captain_inquisitor_select(player, future):
         if lock.is_processing():
             return
 
-        # Validate Player
+        # Validate User
         if interaction.user.id != player.id:
             await interaction.resopnse.send_message("Not Your Choice!", ephemeral = True)
             return
@@ -309,22 +309,30 @@ def create_block_button(game):
     """Generic Block Button"""
     button = Button(label="Block", style=discord.ButtonStyle.danger)
 
+    lock = InteractionLock()
+
     async def callback(interaction: discord.Interaction):
+        # Check lock
+        if lock.is_processing():
+            return
+        
+        # Validate User
         user = interaction.user
         action: Action = game.current_action
 
-        # Validate that the user can block
         if user.id == action.actor.id or user.id not in game.get_turn_order_ids():
-            await interaction.response.send_message(
-                "You cannot block!", ephemeral=True
-            )
+            await interaction.response.send_message("You cannot block!", ephemeral=True)
             return
         
+        # Acquire Lock
+        if not lock.acquire():
+            return
+
         # Update Action
         action.blocked = True
         action.blocker = game.get_player_by_id(user.id)
 
-        # If action is steal, must choose to block as captain or inquisitor
+        # If Action is Steal, Choose to block as Captain or Inquisitor
         if action.name == "Steal":
             future = asyncio.get_event_loop().create_future()
 
@@ -338,6 +346,7 @@ def create_block_button(game):
             )
             # Await Response
             action.blocking_role = await future
+        
         # Otherwise, map action blocked to role (only one choice)
         else:
             mapping = {"Collect Foreign Aid": "Duke", "Assassinate": "Contessa"}
@@ -345,6 +354,9 @@ def create_block_button(game):
 
         # Give chance to challenge
         await game.send_response_message()
+
+        # Release lock
+        lock.release()
     
     button.callback = callback
     return button
@@ -352,7 +364,14 @@ def create_block_button(game):
 def create_challenge_button(game):
     button = Button(label="Challenge", style=discord.ButtonStyle.danger)
 
+    lock = InteractionLock()
+
     async def callback(interaction: discord.Interaction):
+        # Check lock
+        if lock.is_processing:
+            return
+        
+        # Validate User
         user = interaction.user
         action: Action = game.current_action
 
@@ -372,6 +391,10 @@ def create_challenge_button(game):
                     ephemeral=True
                 )
                 return
+            
+        # Acquire lock
+        if not lock.acquire():
+            return
 
         # Update Action object
         action.challenged = True
@@ -386,6 +409,9 @@ def create_challenge_button(game):
         # Handle the Challenge
         await game.handle_challenge()
 
+        # Release lock
+        lock.release()
+
     button.callback = callback
     return button
 
@@ -393,28 +419,34 @@ def create_challenge_button(game):
 def create_prompt_button(target, future):
     button = Button(label="Choose", style=discord.ButtonStyle.danger)
 
+    lock = InteractionLock()
+
     async def callback(interaction: discord.Interaction):
-        try:
-            user = interaction.user
+        # Check lock
+        if lock.is_processing():
+            return
+        
+        # Validate User
+        user = interaction.user
+        if user.id != target.id:
+            await interaction.response.send_message("You are not the player losing influence!", ephemeral=True)
+            return
+        
+        # Acquire lock
+        if not lock.acquire():
+            return
+        
+        # Send Prompt
+        view = View(timeout=None)
+        view.add_item(create_influence_select(target, future))
+        await interaction.response.send_message(
+            view=view,
+            embed=create_influence_select_embed(),
+            ephemeral=True
+        )
 
-            # Validate user
-            if user.id != target.id:
-                await interaction.response.send_message(
-                    "You are not the player losing influence!",
-                    ephemeral=True
-                )
-
-            else:
-                view = View(timeout=None)
-                view.add_item(create_influence_select(target, future))
-                await interaction.response.send_message(
-                    view=view,
-                    embed=create_influence_select_embed(),
-                    ephemeral=True
-                )
-
-        except Exception as e:
-            logger.exception(f"error in button callback: {e}")
+        # Release lock
+        lock.release()
 
     button.callback = callback
     return button
@@ -440,9 +472,7 @@ def create_hand_button(game):
     button.callback = callback
     return button
 
-# --------------
-# Misc.
-# --------------
+# === MISC ===
 
 async def update_response_timer(game, msg, embed, timeout):
     """Function that updates the response embed to show time left to respond"""
