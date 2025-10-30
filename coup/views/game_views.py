@@ -28,9 +28,6 @@ class InteractionLock:
     def is_processing(self):
         """Check if currently processing"""
         return self.processing
-    
-class PlayerChoice:
-    """Helper for waiting on player choices"""
 
 # === VIEWS ===
 
@@ -97,7 +94,6 @@ def create_response_embed(game):
     title = ""
     if action.blocked:
         title += f"{action.blocker.name}, as {action.blocking_role}, is attempting to block "
-        title += f"{action.blocker.name}, as {action.blocking_role}, is attempting to block "
     title += f"{action.actor.name} attempting to {action.name}."
 
     return discord.Embed(
@@ -115,7 +111,8 @@ def create_target_embed(game):
 def create_prompt_embed(target, mode: str):
     descriptions = {
         "lose": f"{target.name}: Choose an influence card to lose:",
-        "examine": f"{target.name}: Choose an influence card to be examined:"
+        "examine": f"{target.name}: Choose an influence card to be examined:",
+        "swap": f"{target.name}: Choose whether target should exchange examined card:"
     }
     description = descriptions.get(mode)
 
@@ -150,7 +147,7 @@ def create_turn_start_embed(game):
 # === SELECT MENUS ===
 
 def create_action_select(game, view):
-    actions = [Income, Foreign_Aid, Coup, Tax, Exchange, Assassinate, Steal]
+    actions = [Income, Foreign_Aid, Coup, Tax, Exchange, Assassinate, Steal, Examine]
     options = [discord.SelectOption(label=a.name, value=a.name) for a in actions]
     mapping = {a.name: a for a in actions}
     select = Select(placeholder="Choose your action...", options=options, min_values=1, max_values=1)
@@ -241,7 +238,10 @@ def create_target_select(game, view):
 
 def create_influence_select(player, future):
     cards = [card for card in player.hand]
-    options = [discord.SelectOption(label=card, value=card) for card in cards]
+    options = [
+        discord.SelectOption(label=card, value=f"{card}_{i}")
+        for i, card in enumerate(cards)
+    ]
     select = Select(placeholder="Choose role to lose...", options=options)
 
     lock = InteractionLock()
@@ -255,8 +255,10 @@ def create_influence_select(player, future):
         if not lock.acquire():
             return
 
-        # Set Result
-        future.set_result(select.values[0])
+        # Extract card name and set result
+        selected_value = select.values[0]
+        card_name = selected_value.rsplit("_", 1)[0]
+        future.set_result(card_name)
 
         # Disable Select
         select.disabled = True
@@ -302,6 +304,7 @@ def choose_captain_inquisitor_select(player, future):
     select.callback = callback
     return select
 
+
 def choose_captain_inquisitor_select(player, future):
     options = [discord.SelectOption(label=card, value=card) for card in ["Captain", "Inquisitor"]]
 
@@ -326,6 +329,7 @@ def choose_captain_inquisitor_select(player, future):
 
     select.callback = callback
     return select
+
 
 def choose_captain_inquisitor_select(player, future):
     options = [discord.SelectOption(label=card, value=card) for card in ["Captain", "Inquisitor"]]
