@@ -36,7 +36,7 @@ class Action(ABC):
     async def on_block(self, game):
         # Default Behavior: Action doesn't go through, end turn
         if self.blocked and not self.challenged:
-            game.send_update_msg(
+            await game.send_update_msg(
                 f"{self.name} got blocked by {self.blocker.name}."
             )
         await game.end_turn()
@@ -122,6 +122,18 @@ class Exchange(Action):
         await game.handle_lose_influence(player=self.actor, exchange=True)
         
         await game.end_turn()
+
+class Examine(Action):
+    name = "Examine"
+    role = "Inquisitor"
+
+    async def execute(self, game):
+        # Target chooses card to reveal
+        await game.handle_examine()
+        await game.end_turn()
+
+    async def has_target(self):
+        return True
 
 class Assassinate(Action):
     name = "Assasinate"

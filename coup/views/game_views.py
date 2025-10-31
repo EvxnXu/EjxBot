@@ -3,7 +3,7 @@ import asyncio
 import discord
 import logging
 from discord.ui import Select, Button, View
-from coup.models import Action, Income, Foreign_Aid, Tax, Coup, Exchange, Assassinate, Steal
+from coup.models import Action, Income, Foreign_Aid, Tax, Coup, Exchange, Assassinate, Steal, Examine
 
 logger = logging.getLogger("coup")
 
@@ -28,9 +28,6 @@ class InteractionLock:
     def is_processing(self):
         """Check if currently processing"""
         return self.processing
-    
-class PlayerChoice:
-    """Helper for waiting on player choices"""
 
 # === VIEWS ===
 
@@ -63,7 +60,7 @@ def create_response_view(game):
         logger.info("Adding Block Button to Response Message.")
 
     # Only add challenge button if action is blockable or action has been role blocked
-    if isinstance(action, (Tax, Assassinate, Exchange, Steal)) or action.blocked:
+    if isinstance(action, (Tax, Assassinate, Exchange, Examine, Steal)) or action.blocked:
         view.add_item(create_challenge_button(game))
         logger.info("Adding Challenge Button to Response Message.")
     
@@ -83,6 +80,14 @@ def create_hand_view(game):
     view.add_item(create_hand_button(game))
     return view
 
+
+def create_swap_view(game, role, future):
+    """Creates a prompt button to choose whether player should swap examined role"""
+    view = View(timeout=None)
+    view.add_item(create_swap_select(game.current_action.target, future))
+    view.add_item(create_examine_button(game, role))
+    return view
+
 # === EMBEDS ===
 
 def create_action_embed(game):
@@ -96,7 +101,6 @@ def create_response_embed(game):
     action = game.current_action
     title = ""
     if action.blocked:
-        title += f"{action.blocker.name}, as {action.blocking_role}, is attempting to block "
         title += f"{action.blocker.name}, as {action.blocking_role}, is attempting to block "
     title += f"{action.actor.name} attempting to {action.name}."
 
@@ -115,7 +119,8 @@ def create_target_embed(game):
 def create_prompt_embed(target, mode: str):
     descriptions = {
         "lose": f"{target.name}: Choose an influence card to lose:",
-        "examine": f"{target.name}: Choose an influence card to be examined:"
+        "examine": f"{target.name}: Choose an influence card to be examined:",
+        "swap": f"{target.name}: Choose whether target should exchange examined card:"
     }
     description = descriptions.get(mode)
 
@@ -147,10 +152,17 @@ def create_turn_start_embed(game):
     )
     return embed
 
+
+def create_swap_embed(game):
+    return discord.Embed(
+        title=f"{game.current_action.target.name} is being examined by {game.current_player.name}...",
+        description=f"{game.current_player.name}, please review the examined role and choose decide whether {game.current_player.name} should swap or keep the role."
+    )
+
 # === SELECT MENUS ===
 
 def create_action_select(game, view):
-    actions = [Income, Foreign_Aid, Coup, Tax, Exchange, Assassinate, Steal]
+    actions = [Income, Foreign_Aid, Coup, Tax, Exchange, Assassinate, Steal, Examine]
     options = [discord.SelectOption(label=a.name, value=a.name) for a in actions]
     mapping = {a.name: a for a in actions}
     select = Select(placeholder="Choose your action...", options=options, min_values=1, max_values=1)
@@ -241,7 +253,10 @@ def create_target_select(game, view):
 
 def create_influence_select(player, future):
     cards = [card for card in player.hand]
-    options = [discord.SelectOption(label=card, value=card) for card in cards]
+    options = [
+        discord.SelectOption(label=card, value=f"{card}_{i}")
+        for i, card in enumerate(cards)
+    ]
     select = Select(placeholder="Choose role to lose...", options=options)
 
     lock = InteractionLock()
@@ -255,12 +270,14 @@ def create_influence_select(player, future):
         if not lock.acquire():
             return
 
-        # Set Result
-        future.set_result(select.values[0])
+        # Extract card name and set result
+        selected_value = select.values[0]
+        card_name = selected_value.rsplit("_", 1)[0]
+        future.set_result(card_name)
 
         # Disable Select
         select.disabled = True
-        await interaction.message.edit(view=select.view)
+        await interaction.response.edit_message(view=select.view)
 
         # Release lock
         lock.release()
@@ -302,6 +319,7 @@ def choose_captain_inquisitor_select(player, future):
     select.callback = callback
     return select
 
+
 def choose_captain_inquisitor_select(player, future):
     options = [discord.SelectOption(label=card, value=card) for card in ["Captain", "Inquisitor"]]
 
@@ -327,6 +345,7 @@ def choose_captain_inquisitor_select(player, future):
     select.callback = callback
     return select
 
+
 def choose_captain_inquisitor_select(player, future):
     options = [discord.SelectOption(label=card, value=card) for card in ["Captain", "Inquisitor"]]
 
@@ -348,6 +367,26 @@ def choose_captain_inquisitor_select(player, future):
         select.disabled = True
         await interaction.response.send_message(view=select.view)
 
+    select.callback = callback
+    return select
+
+
+def create_swap_select(player, future):
+    options = [discord.SelectOption(label=option, value=option) for option in ["swap", "keep"]]
+    select = Select(placeholder="Swap or Keep Examined Role?", options=options)
+
+    async def callback(interaction: discord.Interaction):
+        if interaction.user.id != player.id:
+            await interaction.response.send_message("You are not the player examining!", ephemeral=True)
+
+        if select.values[0] == 'swap':
+            future.set_result(True)
+        else:
+            future.set_result(False)
+
+        select.disabled = True
+        await interaction.response.send_message(view=select.view)
+        
     select.callback = callback
     return select
 
@@ -456,7 +495,7 @@ def create_challenge_button(game):
             await game.send_update_msg(f"{action.challenger.name} has challenged the action!")
         else:
             await game.send_update_msg(f"{action.challenger.name} has challenged the role block!")
-        await interaction.response.defer()
+
         # Handle the Challenge
         await game.handle_challenge()
 
@@ -475,6 +514,7 @@ def create_prompt_button(target, future):
     async def callback(interaction: discord.Interaction):
         # Check lock
         if lock.is_processing():
+            await interaction.response.send_message("Already Handling a request", ephemeral=True)
             return
         
         # Validate User
@@ -484,16 +524,20 @@ def create_prompt_button(target, future):
         
         # Acquire lock
         if not lock.acquire():
+            await interaction.response.send_message("Already Handling a request", ephemeral=True)
             return
         
         # Send Prompt
-        view = View(timeout=None)
-        view.add_item(create_influence_select(target, future))
-        await interaction.response.send_message(
-            view=view,
-            embed=create_influence_select_embed(),
-            ephemeral=True
-        )
+        try:
+            view = View(timeout=None)
+            view.add_item(create_influence_select(target, future))
+            await interaction.response.send_message(
+                view=view,
+                embed=create_influence_select_embed(),
+                ephemeral=True
+            )
+        except Exception as e:
+            logger.exception(f"Failed to send influence select message: {e}")
 
         # Release lock
         lock.release()
@@ -519,6 +563,20 @@ def create_hand_button(game):
                 ephemeral=True
             )
 
+    button.callback = callback
+    return button
+
+
+def create_examine_button(game, role):
+    """Button that reveals the examined role to the player examining"""
+    button = Button(label="Examine", style=discord.ButtonStyle.blurple)
+
+    async def callback(interaction: discord.Interaction):
+        if interaction.user.id != game.current_player.id:
+            await interaction.response.send_message("You are not the Examiner!", ephemeral=True)
+        else:
+            await interaction.response.send_message(f"The examined role is {role}.", ephemeral=True)
+    
     button.callback = callback
     return button
 
