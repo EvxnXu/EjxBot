@@ -419,12 +419,12 @@ class Game:
         )
         swap: bool = await future
 
-        # --- Step 2a: If Actor wants target to exchange the role ---
+        # --- Step 2a: If Actor wants target to swap the role ---
         if swap:
-            self.send_update_msg(f"{actor.name} opted to have {target.name} exchange their role.")
+            await self.send_update_msg(f"{actor.name} examined {target.name} and chose to force a card swap.")
             await self.handle_lose_influence(player=target, card=examined, exchange=True)
         # -- Step 2b: If Actor wants target to keep the role ---
         else:
-            self.send_update_msg(f"{actor.name} opted to have {target.name} keep their role.")
-        
+            await self.send_update_msg(f"{actor.name} examined {target.name} and chose to let them keep their card.")
+
         return
