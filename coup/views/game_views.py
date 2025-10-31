@@ -84,7 +84,7 @@ def create_hand_view(game):
 def create_swap_view(game, role, future):
     """Creates a prompt button to choose whether player should swap examined role"""
     view = View(timeout=None)
-    view.add_item(create_swap_select(game.current_action.target, future))
+    view.add_item(create_swap_select(game.current_player, future))
     view.add_item(create_examine_button(game, role))
     return view
 
@@ -320,64 +320,15 @@ def choose_captain_inquisitor_select(player, future):
     return select
 
 
-def choose_captain_inquisitor_select(player, future):
-    options = [discord.SelectOption(label=card, value=card) for card in ["Captain", "Inquisitor"]]
-
-    view = View(timeout=None)
-    select = Select(
-        placeholder="Choose role to block with...",
-        options=options
-    )
-
-    async def callback(interaction: discord.Interaction):
-        user = interaction.user
-        if user.id != player.id:
-            await interaction.resopnse.send_message(
-                "Not Your Choice!", ephemeral = True
-            )
-
-        future.set_result(select.values[0])
-
-        # Disable the Select to Show Choice Made
-        select.disabled = True
-        await interaction.response.send_message(view=select.view)
-
-    select.callback = callback
-    return select
-
-
-def choose_captain_inquisitor_select(player, future):
-    options = [discord.SelectOption(label=card, value=card) for card in ["Captain", "Inquisitor"]]
-
-    select = Select(
-        placeholder="Choose role to block with...",
-        options=options
-    )
-
-    async def callback(interaction: discord.Interaction):
-        user = interaction.user
-        if user.id != player.id:
-            await interaction.resopnse.send_message(
-                "Not Your Choice!", ephemeral = True
-            )
-
-        future.set_result(select.values[0])
-
-        # Disable the Select to Show Choice Made
-        select.disabled = True
-        await interaction.response.send_message(view=select.view)
-
-    select.callback = callback
-    return select
-
-
 def create_swap_select(player, future):
+    #TODO: Add intearaction lock
     options = [discord.SelectOption(label=option, value=option) for option in ["swap", "keep"]]
     select = Select(placeholder="Swap or Keep Examined Role?", options=options)
 
     async def callback(interaction: discord.Interaction):
         if interaction.user.id != player.id:
             await interaction.response.send_message("You are not the player examining!", ephemeral=True)
+            return
 
         if select.values[0] == 'swap':
             future.set_result(True)
@@ -440,6 +391,9 @@ def create_block_button(game):
         else:
             mapping = {"Collect Foreign Aid": "Duke", "Assassinate": "Contessa"}
             action.blocking_role = mapping[action.name]
+        
+        # Send an update message
+        game.send_update_msg(f"{action.blocker.name} is blocking {action.name} as {action.blocking_role}.")
 
         # Give chance to challenge
         await game.send_response_message()
