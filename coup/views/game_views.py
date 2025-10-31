@@ -391,6 +391,9 @@ def create_block_button(game):
         else:
             mapping = {"Collect Foreign Aid": "Duke", "Assassinate": "Contessa"}
             action.blocking_role = mapping[action.name]
+        
+        # Send an update message
+        game.send_update_msg(f"{action.blocker.name} is blocking {action.name} as {action.blocking_role}.")
 
         # Give chance to challenge
         await game.send_response_message()
