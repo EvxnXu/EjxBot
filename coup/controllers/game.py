@@ -6,13 +6,7 @@ import logging
 from typing import Optional
 from collections import deque
 from coup.models import Player, Deck, Action, Coup
-from coup.views import (
-    create_action_view, create_action_embed,
-    create_target_view, create_target_embed,
-    create_response_view, create_response_embed, update_response_timer,
-    create_prompt_view, create_prompt_embed,
-    create_hand_view, create_turn_start_embed
-    )
+from coup.views import *
 
 logger = logging.getLogger("coup")
 
@@ -379,7 +373,7 @@ class Game:
             future = asyncio.get_event_loop().create_future()
             msg = await self.game_thread.send(
                 view = create_prompt_view(target=player, future=future),
-                embed = create_prompt_embed(target=player))
+                embed = create_prompt_embed(target=player, mode="lose"))
             card_choice = await future
             await msg.delete()
             player.lose_influence(card_choice)
@@ -398,3 +392,39 @@ class Game:
             await self.send_update_msg(
                 f"{player.name} has lost influence: {card_choice}"
             )
+
+    async def handle_examine(self):
+        """Handle logic for Player being examined"""
+        target = self.current_action.target
+        actor = self.current_player
+
+        logger.info(f"Handing {target.name} being examined by {actor.name}")
+
+        # --- Step 1: Obtain the Role Target is Revealing ---
+        if target.num_influence() == 2:
+            logger.info(f"{target.name} has 2 influence, must choose one to reveal")
+            future = asyncio.get_event_loop().create_future()
+            msg = await self.game_thread.send(
+                view = create_prompt_view(target=target, future=future),
+                embed = create_prompt_embed(target=target, mode="examine")
+            )
+            examined = await future
+            await msg.delete()
+
+        # --- Step 2: Reveal Examined role to Inquisitor ---
+        future = asyncio.get_event_loop().create_future()
+        msg = await self.game_thread.send(
+            view = create_swap_view(game=self, role=examined, future=future),
+            embed=create_prompt_embed(target=actor, mode="swap")
+        )
+        swap: bool = await future
+
+        # --- Step 2a: If Actor wants target to exchange the role ---
+        if swap:
+            self.send_update_msg(f"{actor.name} opted to have {target.name} exchange their role.")
+            await self.handle_lose_influence(player=target, card=examined, exchange=True)
+        # -- Step 2b: If Actor wants target to keep the role ---
+        else:
+            self.send_update_msg(f"{actor.name} opted to have {target.name} keep their role.")
+        
+        return
