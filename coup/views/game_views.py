@@ -120,7 +120,7 @@ def create_prompt_embed(target, mode: str):
     descriptions = {
         "lose": f"{target.name}: Choose an influence card to lose:",
         "examine": f"{target.name}: Choose an influence card to be examined:",
-        "swap": f"{target.name}: Choose whether target should exchange examined card:"
+        "swap": f"{target.name}: Force {target.name} to swap their card?"
     }
     description = descriptions.get(mode)
 

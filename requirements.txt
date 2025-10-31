@@ -1,0 +1,7 @@
+# requirements.txt
+
+# Core Dependencies
+discord.py>=2.6.3
+
+# Testing Dependencies
+pytest>=8.4.2
