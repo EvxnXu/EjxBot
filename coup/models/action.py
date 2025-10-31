@@ -129,8 +129,11 @@ class Examine(Action):
 
     async def execute(self, game):
         # Target chooses card to reveal
-        await game.handle_examine(player=self.target)
+        await game.handle_examine()
         await game.end_turn()
+
+    async def has_target(self):
+        return True
 
 class Assassinate(Action):
     name = "Assasinate"
